@@ -127,6 +127,7 @@ export class BlingService {
     const accessToken = await this.getValidAccessToken();
 
     try {
+      // Fetch products from Bling API
       const response = await axios.get(`${this.apiUrl}/produtos`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -134,9 +135,72 @@ export class BlingService {
         },
       });
 
-      return { success: true, products: response.data };
+      console.log('Bling API Full Response:', JSON.stringify(response.data, null, 2));
+      console.log('Bling API Status:', response.status);
+      console.log('Bling API Headers:', response.headers);
+
+      const blingProducts = response.data.data || [];
+
+      if (blingProducts.length === 0) {
+        console.log('⚠️ No products found in Bling ERP. The account may be empty or you need to add products first.');
+        return {
+          success: true,
+          data: [],
+          total: 0,
+          message: 'No products found in Bling ERP',
+        };
+      }
+
+      // Get or create a default category for synced products
+      let defaultCategory = await this.prisma.category.findFirst({
+        where: { slug: 'bling-sync' },
+      });
+
+      if (!defaultCategory) {
+        defaultCategory = await this.prisma.category.create({
+          data: {
+            name: 'Bling Sync',
+            slug: 'bling-sync',
+          },
+        });
+      }
+
+      // Map and save products to database
+      const savedProducts = [];
+      for (const blingProduct of blingProducts) {
+        // Map Bling fields to database schema
+        const productData = {
+          sku: blingProduct.codigo || '',
+          name: blingProduct.nome || '',
+          price: blingProduct.preco || 0,
+          stock: blingProduct.estoque?.saldoVirtualTotal || 0,
+          categoryId: defaultCategory.id,
+        };
+
+        // Upsert product (update if exists, create if not)
+        const savedProduct = await this.prisma.product.upsert({
+          where: { sku: productData.sku },
+          update: {
+            name: productData.name,
+            price: productData.price,
+            stock: productData.stock,
+            categoryId: productData.categoryId,
+          },
+          create: productData,
+        });
+
+        savedProducts.push(savedProduct);
+      }
+
+      return {
+        success: true,
+        data: savedProducts,
+        total: savedProducts.length,
+        message: `Successfully synced ${savedProducts.length} products from Bling ERP`,
+      };
     } catch (error) {
-      throw new Error(`Failed to sync products: ${error.response?.data?.error || error.message}`);
+      console.error('Bling API Error:', error.response?.data);
+      throw new Error(`Failed to sync products: ${JSON.stringify(error.response?.data) || error.message}`);
     }
   }
 

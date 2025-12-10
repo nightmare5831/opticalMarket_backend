@@ -10,8 +10,7 @@ export class BlingController {
   constructor(private blingService: BlingService) {}
 
   @Get('status')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard)
   async getStatus() {
     const configured = await this.blingService.isConfigured();
     const status = await this.blingService.getConnectionStatus();
@@ -41,8 +40,7 @@ export class BlingController {
   }
 
   @Get('sync/products')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard)
   async syncProducts() {
     return await this.blingService.syncProducts();
   }
