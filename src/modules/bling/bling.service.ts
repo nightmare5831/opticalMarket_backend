@@ -14,7 +14,7 @@ export class BlingService {
   constructor(private config: ConfigService) {
     this.clientId = this.config.get('BLING_CLIENT_ID') || '';
     this.clientSecret = this.config.get('BLING_CLIENT_SECRET') || '';
-    this.redirectUri = this.config.get('BLING_REDIRECT_URI') || '';
+    this.redirectUri = this.config.get('BLING_REDIRECT_URI') || 'https://opticalmarket-backend.onrender.com/api/bling/callback';
     this.apiUrl = this.config.get('BLING_API_URL') || 'https://www.bling.com.br/Api/v3';
     this.prisma = new PrismaClient();
   }
@@ -29,6 +29,7 @@ export class BlingService {
         new URLSearchParams({
           grant_type: 'authorization_code',
           code: code,
+          redirect_uri: this.redirectUri,
         }).toString(),
         {
           headers: {
