@@ -24,6 +24,9 @@
     "@prisma/client": "^5.7.0",
     "prisma": "^5.7.0",
     "typescript": "^5.1.3",
+    "@types/bcrypt": "^5.0.2",
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.3.1",
     "axios": "^1.13.2",
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
@@ -32,8 +35,5 @@
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
-    "@types/bcrypt": "^5.0.2",
-    "@types/express": "^5.0.6",
-    "@types/node": "^20.3.1"
   }
 }
