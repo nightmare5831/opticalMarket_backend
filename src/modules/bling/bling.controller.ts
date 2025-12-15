@@ -36,21 +36,21 @@ export class BlingController {
     @Res() res: Response,
   ) {
     if (!code) {
-      return res.redirect(`${this.frontendUrl}/admin?bling_error=no_code`);
+      return res.redirect(`${this.frontendUrl}?bling_error=no_code`);
     }
 
     // Extract userId from state parameter (should be passed during OAuth initiation)
     const userId = state;
     if (!userId) {
-      return res.redirect(`${this.frontendUrl}/admin?bling_error=no_user_id`);
+      return res.redirect(`${this.frontendUrl}?bling_error=no_user_id`);
     }
 
     try {
       await this.blingService.exchangeCodeForTokens(code, userId);
-      return res.redirect(`${this.frontendUrl}/admin?bling_success=true`);
+      return res.redirect(`${this.frontendUrl}?bling_success=true`);
     } catch (error) {
       console.error('Bling OAuth error:', error);
-      return res.redirect(`${this.frontendUrl}/admin?bling_error=token_exchange_failed`);
+      return res.redirect(`${this.frontendUrl}?bling_error=token_exchange_failed`);
     }
   }
 
