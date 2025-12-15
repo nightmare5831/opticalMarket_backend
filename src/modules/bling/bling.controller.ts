@@ -14,7 +14,7 @@ export class BlingController {
     private blingService: BlingService,
     private config: ConfigService,
   ) {
-    this.frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:8080';
+    this.frontendUrl = this.config.get('FRONTEND_URL') || 'https://optical-market-frontend.vercel.app';
   }
 
   @Get('status')
