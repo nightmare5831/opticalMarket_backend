@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Res, UseGuards, Request } from '@nestjs/common';
 import { Response } from 'express';
 import { BlingService } from './bling.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -19,9 +19,10 @@ export class BlingController {
 
   @Get('status')
   @UseGuards(JwtAuthGuard)
-  async getStatus() {
-    const configured = await this.blingService.isConfigured();
-    const status = await this.blingService.getConnectionStatus();
+  async getStatus(@Request() req) {
+    const userId = req.user.id;
+    const configured = await this.blingService.isConfigured(userId);
+    const status = await this.blingService.getConnectionStatus(userId);
     return {
       configured,
       ...status,
@@ -38,8 +39,14 @@ export class BlingController {
       return res.redirect(`${this.frontendUrl}/admin?bling_error=no_code`);
     }
 
+    // Extract userId from state parameter (should be passed during OAuth initiation)
+    const userId = state;
+    if (!userId) {
+      return res.redirect(`${this.frontendUrl}/admin?bling_error=no_user_id`);
+    }
+
     try {
-      await this.blingService.exchangeCodeForTokens(code);
+      await this.blingService.exchangeCodeForTokens(code, userId);
       return res.redirect(`${this.frontendUrl}/admin?bling_success=true`);
     } catch (error) {
       console.error('Bling OAuth error:', error);
@@ -49,7 +56,8 @@ export class BlingController {
 
   @Get('sync/products')
   @UseGuards(JwtAuthGuard)
-  async syncProducts() {
-    return await this.blingService.syncProducts();
+  async syncProducts(@Request() req) {
+    const userId = req.user.id;
+    return await this.blingService.syncProducts(userId);
   }
 }
