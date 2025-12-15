@@ -19,7 +19,7 @@ export class BlingController {
 
   @Get('status')
   @UseGuards(JwtAuthGuard)
-  async getStatus(@Request() req) {
+  async getStatus(@Request() req: any) {
     const userId = req.user.id;
     const configured = await this.blingService.isConfigured(userId);
     const status = await this.blingService.getConnectionStatus(userId);
@@ -56,7 +56,7 @@ export class BlingController {
 
   @Get('sync/products')
   @UseGuards(JwtAuthGuard)
-  async syncProducts(@Request() req) {
+  async syncProducts(@Request() req: any) {
     const userId = req.user.id;
     return await this.blingService.syncProducts(userId);
   }
