@@ -20,7 +20,7 @@ export class BlingService {
   }
 
   // Exchange authorization code for tokens
-  async exchangeCodeForTokens(code: string): Promise<any> {
+  async exchangeCodeForTokens(code: string, userId: string): Promise<any> {
     try {
       const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
 
@@ -43,10 +43,17 @@ export class BlingService {
       const { access_token, refresh_token, expires_in, scope } = response.data;
       const expiresAt = new Date(Date.now() + expires_in * 1000);
 
-      // Store tokens in database
-      await this.prisma.blingToken.deleteMany({}); // Keep only one token
-      await this.prisma.blingToken.create({
-        data: {
+      // Store tokens in database per user
+      await this.prisma.blingToken.upsert({
+        where: { userId },
+        update: {
+          accessToken: access_token,
+          refreshToken: refresh_token,
+          expiresAt: expiresAt,
+          scope: scope || null,
+        },
+        create: {
+          userId,
           accessToken: access_token,
           refreshToken: refresh_token,
           expiresAt: expiresAt,
@@ -67,10 +74,12 @@ export class BlingService {
   }
 
   // Refresh access token
-  async refreshAccessToken(): Promise<void> {
-    const token = await this.prisma.blingToken.findFirst();
+  async refreshAccessToken(userId: string): Promise<void> {
+    const token = await this.prisma.blingToken.findUnique({
+      where: { userId },
+    });
     if (!token) {
-      throw new Error('No token found');
+      throw new Error('No token found for user');
     }
 
     const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
@@ -95,7 +104,7 @@ export class BlingService {
       const expiresAt = new Date(Date.now() + expires_in * 1000);
 
       await this.prisma.blingToken.update({
-        where: { id: token.id },
+        where: { userId },
         data: {
           accessToken: access_token,
           refreshToken: refresh_token,
@@ -108,24 +117,28 @@ export class BlingService {
   }
 
   // Get valid access token (refresh if expired)
-  async getValidAccessToken(): Promise<string> {
-    const token = await this.prisma.blingToken.findFirst();
+  async getValidAccessToken(userId: string): Promise<string> {
+    const token = await this.prisma.blingToken.findUnique({
+      where: { userId },
+    });
     if (!token) {
       throw new Error('Bling not connected. Please authenticate first.');
     }
 
     // Check if token is expired or about to expire (within 5 minutes)
     if (new Date(token.expiresAt).getTime() - Date.now() < 5 * 60 * 1000) {
-      await this.refreshAccessToken();
-      const refreshedToken = await this.prisma.blingToken.findFirst();
+      await this.refreshAccessToken(userId);
+      const refreshedToken = await this.prisma.blingToken.findUnique({
+        where: { userId },
+      });
       return refreshedToken!.accessToken;
     }
 
     return token.accessToken;
   }
 
-  async syncProducts() {
-    const accessToken = await this.getValidAccessToken();
+  async syncProducts(userId: string) {
+    const accessToken = await this.getValidAccessToken(userId);
 
     try {
       // Fetch products from Bling API
@@ -205,8 +218,8 @@ export class BlingService {
     }
   }
 
-  async createOrder(orderData: any) {
-    const accessToken = await this.getValidAccessToken();
+  async createOrder(orderData: any, userId: string) {
+    const accessToken = await this.getValidAccessToken(userId);
 
     try {
       const response = await axios.post(`${this.apiUrl}/pedidos`, orderData, {
@@ -223,16 +236,20 @@ export class BlingService {
     }
   }
 
-  async isConfigured(): Promise<boolean> {
+  async isConfigured(userId: string): Promise<boolean> {
     if (!this.clientId || !this.clientSecret) {
       return false;
     }
-    const token = await this.prisma.blingToken.findFirst();
+    const token = await this.prisma.blingToken.findUnique({
+      where: { userId },
+    });
     return !!token;
   }
 
-  async getConnectionStatus(): Promise<any> {
-    const token = await this.prisma.blingToken.findFirst();
+  async getConnectionStatus(userId: string): Promise<any> {
+    const token = await this.prisma.blingToken.findUnique({
+      where: { userId },
+    });
     if (!token) {
       return {
         connected: false,
