@@ -84,13 +84,16 @@ enum OrderStatus {
 }
 
 model BlingToken {
-  id           String   @id @default(uuid())
-  userId       String   @unique
-  accessToken  String   @db.Text
-  refreshToken String   @db.Text
-  expiresAt    DateTime
+  id           String    @id @default(uuid())
+  userId       String    @unique
+  clientId     String    @unique
+  clientSecret String    @db.Text
+  state        String    @unique
+  accessToken  String?   @db.Text
+  refreshToken String?   @db.Text
+  expiresAt    DateTime?
   scope        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

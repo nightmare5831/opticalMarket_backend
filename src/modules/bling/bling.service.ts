@@ -5,72 +5,63 @@ import axios from 'axios';
 
 @Injectable()
 export class BlingService {
-  private clientId: string;
-  private clientSecret: string;
   private redirectUri: string;
   private apiUrl: string;
   private prisma: PrismaClient;
 
   constructor(private config: ConfigService) {
-    this.clientId = this.config.get('BLING_CLIENT_ID') || '';
-    this.clientSecret = this.config.get('BLING_CLIENT_SECRET') || '';
     this.redirectUri = this.config.get('BLING_REDIRECT_URI') || 'https://opticalmarket-backend.onrender.com/api/bling/callback';
     this.apiUrl = this.config.get('BLING_API_URL') || 'https://www.bling.com.br/Api/v3';
     this.prisma = new PrismaClient();
   }
 
-  // Exchange authorization code for tokens
-  async exchangeCodeForTokens(code: string, userId: string): Promise<any> {
-    try {
-      const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
+  async saveCredentials(userId: string, clientId: string, clientSecret: string, state: string): Promise<void> {
+    await this.prisma.blingToken.upsert({
+      where: { userId },
+      update: { clientId, clientSecret, state },
+      create: { userId, clientId, clientSecret, state },
+    });
+  }
 
-      const response = await axios.post(
-        `${this.apiUrl}/oauth/token`,
-        new URLSearchParams({
-          grant_type: 'authorization_code',
-          code: code,
-          redirect_uri: this.redirectUri,
-        }).toString(),
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
-            'Authorization': `Basic ${auth}`,
-          },
-        }
-      );
+  async handleOAuthCallback(code: string, state: string): Promise<void> {
+    const record = await this.prisma.blingToken.findUnique({
+      where: { state },
+    });
 
-      const { access_token, refresh_token, expires_in, scope } = response.data;
-      const expiresAt = new Date(Date.now() + expires_in * 1000);
-
-      // Store tokens in database per user
-      await this.prisma.blingToken.upsert({
-        where: { userId },
-        update: {
-          accessToken: access_token,
-          refreshToken: refresh_token,
-          expiresAt: expiresAt,
-          scope: scope || null,
-        },
-        create: {
-          userId,
-          accessToken: access_token,
-          refreshToken: refresh_token,
-          expiresAt: expiresAt,
-          scope: scope || null,
-        },
-      });
-
-      return { success: true, expiresAt };
-    } catch (error) {
-      console.error('Full error details:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        message: error.message,
-      });
-      throw new Error(`Failed to exchange code: ${JSON.stringify(error.response?.data) || error.message}`);
+    if (!record) {
+      throw new Error('Invalid state parameter');
     }
+
+    const auth = Buffer.from(`${record.clientId}:${record.clientSecret}`).toString('base64');
+
+    const response = await axios.post(
+      `${this.apiUrl}/oauth/token`,
+      new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: this.redirectUri,
+      }).toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+          'Authorization': `Basic ${auth}`,
+        },
+      }
+    );
+
+    const { access_token, refresh_token, expires_in, scope } = response.data;
+    const expiresAt = new Date(Date.now() + expires_in * 1000);
+
+    await this.prisma.blingToken.update({
+      where: { userId: record.userId },
+      data: {
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        expiresAt: expiresAt,
+        scope: scope || null,
+      },
+    });
   }
 
   // Refresh access token
@@ -81,8 +72,11 @@ export class BlingService {
     if (!token) {
       throw new Error('No token found for user');
     }
+    if (!token.refreshToken) {
+      throw new Error('No refresh token available');
+    }
 
-    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
+    const auth = Buffer.from(`${token.clientId}:${token.clientSecret}`).toString('base64');
 
     try {
       const response = await axios.post(
@@ -121,8 +115,11 @@ export class BlingService {
     const token = await this.prisma.blingToken.findUnique({
       where: { userId },
     });
-    if (!token) {
+    if (!token || !token.accessToken) {
       throw new Error('Bling not connected. Please authenticate first.');
+    }
+    if (!token.expiresAt) {
+      throw new Error('Token expiration date not found. Please re-authenticate.');
     }
 
     // Check if token is expired or about to expire (within 5 minutes)
@@ -131,7 +128,10 @@ export class BlingService {
       const refreshedToken = await this.prisma.blingToken.findUnique({
         where: { userId },
       });
-      return refreshedToken!.accessToken;
+      if (!refreshedToken?.accessToken) {
+        throw new Error('Failed to refresh access token');
+      }
+      return refreshedToken.accessToken;
     }
 
     return token.accessToken;
@@ -218,32 +218,11 @@ export class BlingService {
     }
   }
 
-  async createOrder(orderData: any, userId: string) {
-    const accessToken = await this.getValidAccessToken(userId);
-
-    try {
-      const response = await axios.post(`${this.apiUrl}/pedidos`, orderData, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      });
-
-      return { success: true, order: response.data };
-    } catch (error) {
-      throw new Error(`Failed to create order: ${error.response?.data?.error || error.message}`);
-    }
-  }
-
   async isConfigured(userId: string): Promise<boolean> {
-    if (!this.clientId || !this.clientSecret) {
-      return false;
-    }
     const token = await this.prisma.blingToken.findUnique({
       where: { userId },
     });
-    return !!token;
+    return !!token && !!token.accessToken;
   }
 
   async getConnectionStatus(userId: string): Promise<any> {
@@ -254,6 +233,15 @@ export class BlingService {
       return {
         connected: false,
         message: 'Not connected to Bling',
+      };
+    }
+
+    if (!token.expiresAt) {
+      return {
+        connected: true,
+        expiresAt: null,
+        isExpired: false,
+        message: 'Connected to Bling (expiration unknown)',
       };
     }
 
