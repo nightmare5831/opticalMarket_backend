@@ -10,7 +10,8 @@
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "seed": "node src/database/seed.js"
+    "seed": "node src/database/seed.js",
+    "test": "echo \"No tests yet - placeholder for CI\" && exit 0"
   },
   "prisma": {
     "seed": "node src/database/seed.js"
