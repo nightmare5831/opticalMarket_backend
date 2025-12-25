@@ -19,18 +19,6 @@ async function main() {
   });
 
   console.log('Admin user created:', admin.email);
-
-  // Create a sample category
-  const category = await prisma.category.upsert({
-    where: { slug: 'sunglasses' },
-    update: {},
-    create: {
-      name: 'Sunglasses',
-      slug: 'sunglasses',
-    },
-  });
-
-  console.log('Category created:', category.name);
 }
 
 main()

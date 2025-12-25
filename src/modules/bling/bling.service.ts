@@ -64,7 +64,6 @@ export class BlingService {
     });
   }
 
-  // Refresh access token
   async refreshAccessToken(userId: string): Promise<void> {
     const token = await this.prisma.blingToken.findUnique({
       where: { userId },
@@ -110,7 +109,6 @@ export class BlingService {
     }
   }
 
-  // Get valid access token (refresh if expired)
   async getValidAccessToken(userId: string): Promise<string> {
     const token = await this.prisma.blingToken.findUnique({
       where: { userId },
@@ -122,7 +120,6 @@ export class BlingService {
       throw new Error('Token expiration date not found. Please re-authenticate.');
     }
 
-    // Check if token is expired or about to expire (within 5 minutes)
     if (new Date(token.expiresAt).getTime() - Date.now() < 5 * 60 * 1000) {
       await this.refreshAccessToken(userId);
       const refreshedToken = await this.prisma.blingToken.findUnique({
@@ -137,21 +134,174 @@ export class BlingService {
     return token.accessToken;
   }
 
-  async syncProducts(userId: string) {
-    const accessToken = await this.getValidAccessToken(userId);
-
+  async createCategoryInBling(userId: string, categoryName: string): Promise<any> {
     try {
-      // Fetch products from Bling API
-      const response = await axios.get(`${this.apiUrl}/produtos`, {
+      const accessToken = await this.getValidAccessToken(userId);
+
+      const blingCategoryData = {
+        descricao: categoryName,
+      };
+
+      console.log('Creating category in Bling:', blingCategoryData);
+
+      const response = await axios.post(
+        `${this.apiUrl}/categorias/produtos`,
+        blingCategoryData,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      console.log('Category successfully created in Bling:', response.data);
+
+      // Extract the Bling category ID from the response
+      const blingCategoryId = response.data?.data?.id;
+
+      return {
+        success: true,
+        data: response.data,
+        blingId: blingCategoryId,
+        message: 'Category successfully created in Bling ERP',
+      };
+    } catch (error) {
+      console.error('Failed to create category in Bling:', JSON.stringify(error.response?.data, null, 2) || error.message);
+
+      if (error.response?.status === 401) {
+        return {
+          success: false,
+          error: 'Authentication failed. Please reconnect your Bling account.',
+          code: 'AUTH_ERROR',
+        };
+      }
+
+      if (error.response?.status === 400) {
+        return {
+          success: false,
+          error: 'Invalid category data. Please check the category details.',
+          code: 'VALIDATION_ERROR',
+          details: error.response?.data,
+        };
+      }
+
+      return {
+        success: false,
+        error: error.message || 'Failed to create category in Bling ERP',
+        code: 'CREATE_ERROR',
+        details: error.response?.data,
+      };
+    }
+  }
+
+  async syncCategories(userId: string) {
+    try {
+      const accessToken = await this.getValidAccessToken(userId);
+
+      const response = await axios.get(`${this.apiUrl}/categorias/produtos`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/json',
         },
       });
 
-      console.log('Bling API Full Response:', JSON.stringify(response.data, null, 2));
-      console.log('Bling API Status:', response.status);
-      console.log('Bling API Headers:', response.headers);
+      const blingCategories = response.data.data || [];
+
+      const savedCategories = [];
+      const errors = [];
+
+      for (const blingCategory of blingCategories) {
+        try {
+          const slug = blingCategory.descricao
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+
+          // Check if category exists by blingId and userId
+          const existingCategory = await this.prisma.category.findFirst({
+            where: {
+              blingId: blingCategory.id,
+              userId: userId,
+            },
+          });
+
+          let savedCategory;
+          if (existingCategory) {
+            // Update existing category
+            savedCategory = await this.prisma.category.update({
+              where: { id: existingCategory.id },
+              data: {
+                name: blingCategory.descricao,
+                slug,
+              },
+            });
+          } else {
+            // Create new category
+            savedCategory = await this.prisma.category.create({
+              data: {
+                name: blingCategory.descricao,
+                slug,
+                blingId: blingCategory.id,
+                userId: userId,
+              },
+            });
+          }
+
+          savedCategories.push(savedCategory);
+        } catch (categoryError) {
+          errors.push({
+            category: blingCategory.descricao || 'Unknown',
+            error: categoryError.message,
+          });
+        }
+      }
+
+      return {
+        success: true,
+        data: savedCategories,
+        total: blingCategories.length,
+        synced: savedCategories.length,
+        failed: errors.length,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `Synced ${savedCategories.length} of ${blingCategories.length} categories from Bling ERP${errors.length > 0 ? ` (${errors.length} failed)` : ''}`,
+      };
+    } catch (error) {
+      console.error('Bling API Error:', error.response?.data);
+
+      if (error.response?.status === 401) {
+        return {
+          success: false,
+          error: 'Authentication failed. Please reconnect your Bling account.',
+          code: 'AUTH_ERROR',
+        };
+      }
+
+      return {
+        success: false,
+        error: error.message || 'Unknown error occurred during category sync',
+        code: 'SYNC_ERROR',
+        details: error.response?.data,
+      };
+    }
+  }
+
+  async syncProducts(userId: string) {
+    try {
+      const accessToken = await this.getValidAccessToken(userId);
+
+      // First sync categories
+      await this.syncCategories(userId);
+
+      const response = await axios.get(`${this.apiUrl}/produtos`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+        },
+      });
 
       const blingProducts = response.data.data || [];
 
@@ -161,60 +311,141 @@ export class BlingService {
           success: true,
           data: [],
           total: 0,
+          synced: 0,
+          failed: 0,
+          errors: [],
           message: 'No products found in Bling ERP',
         };
       }
 
-      // Get or create a default category for synced products
       let defaultCategory = await this.prisma.category.findFirst({
-        where: { slug: 'bling-sync' },
+        where: {
+          slug: 'uncategorized',
+          userId: userId,
+        },
       });
 
       if (!defaultCategory) {
         defaultCategory = await this.prisma.category.create({
           data: {
-            name: 'Bling Sync',
-            slug: 'bling-sync',
+            name: 'Uncategorized',
+            slug: 'uncategorized',
+            userId: userId,
           },
         });
       }
 
-      // Map and save products to database
       const savedProducts = [];
+      const errors = [];
+
       for (const blingProduct of blingProducts) {
-        // Map Bling fields to database schema
-        const productData = {
-          sku: blingProduct.codigo || '',
-          name: blingProduct.nome || '',
-          price: blingProduct.preco || 0,
-          stock: blingProduct.estoque?.saldoVirtualTotal || 0,
-          categoryId: defaultCategory.id,
-        };
+        try {
+          if (!blingProduct.codigo || blingProduct.codigo.trim() === '') {
+            errors.push({
+              product: blingProduct.nome || 'Unknown',
+              error: 'Missing SKU (codigo)',
+            });
+            continue;
+          }
 
-        // Upsert product (update if exists, create if not)
-        const savedProduct = await this.prisma.product.upsert({
-          where: { sku: productData.sku },
-          update: {
-            name: productData.name,
-            price: productData.price,
-            stock: productData.stock,
-            categoryId: productData.categoryId,
-          },
-          create: productData,
-        });
+          // Find category by name if it exists in Bling product
+          let categoryId = defaultCategory.id;
+          if (blingProduct.categoria?.descricao) {
+            const categorySlug = blingProduct.categoria.descricao
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '');
 
-        savedProducts.push(savedProduct);
+            const category = await this.prisma.category.findFirst({
+              where: {
+                slug: categorySlug,
+                userId: userId,
+              },
+            });
+
+            if (category) {
+              categoryId = category.id;
+            }
+          }
+
+          const productData = {
+            sku: blingProduct.codigo,
+            name: blingProduct.nome || 'Unnamed Product',
+            description: blingProduct.descricao || null,
+            price: parseFloat(blingProduct.preco) || 0,
+            stock: blingProduct.estoque?.saldoVirtualTotal || 0,
+            images: blingProduct.imagemURL ? [blingProduct.imagemURL] : [],
+            categoryId: categoryId,
+            sellerId: userId,
+          };
+
+          const savedProduct = await this.prisma.product.upsert({
+            where: { sku: productData.sku },
+            update: {
+              name: productData.name,
+              description: productData.description,
+              price: productData.price,
+              stock: productData.stock,
+              images: productData.images,
+              categoryId: productData.categoryId,
+              sellerId: userId,
+            },
+            create: productData,
+          });
+
+          savedProducts.push(savedProduct);
+        } catch (productError) {
+          errors.push({
+            product: blingProduct.nome || blingProduct.codigo || 'Unknown',
+            error: productError.message,
+          });
+        }
       }
 
       return {
         success: true,
         data: savedProducts,
-        total: savedProducts.length,
-        message: `Successfully synced ${savedProducts.length} products from Bling ERP`,
+        total: blingProducts.length,
+        synced: savedProducts.length,
+        failed: errors.length,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `Synced ${savedProducts.length} of ${blingProducts.length} products from Bling ERP${errors.length > 0 ? ` (${errors.length} failed)` : ''}`,
       };
     } catch (error) {
       console.error('Bling API Error:', error.response?.data);
-      throw new Error(`Failed to sync products: ${JSON.stringify(error.response?.data) || error.message}`);
+
+      if (error.response?.status === 401) {
+        return {
+          success: false,
+          error: 'Authentication failed. Please reconnect your Bling account.',
+          code: 'AUTH_ERROR',
+        };
+      }
+
+      if (error.response?.status === 403) {
+        return {
+          success: false,
+          error: 'Access denied. Check your Bling API permissions.',
+          code: 'PERMISSION_ERROR',
+        };
+      }
+
+      if (error.response?.status === 429) {
+        return {
+          success: false,
+          error: 'Rate limit exceeded. Please try again later.',
+          code: 'RATE_LIMIT',
+        };
+      }
+
+      return {
+        success: false,
+        error: error.message || 'Unknown error occurred during sync',
+        code: 'SYNC_ERROR',
+        details: error.response?.data,
+      };
     }
   }
 
@@ -252,5 +483,121 @@ export class BlingService {
       isExpired: isExpired,
       message: isExpired ? 'Token expired, will refresh on next request' : 'Connected to Bling',
     };
+  }
+
+  async pushProductToBling(userId: string, productData: {
+    sku: string;
+    name: string;
+    description?: string;
+    price: number;
+    stock: number;
+    blingImageUrl?: string;
+    blingCategoryId?: number;
+  }): Promise<any> {
+    try {
+      const accessToken = await this.getValidAccessToken(userId);
+
+      const blingProductData: any = {
+        nome: productData.name,
+        codigo: productData.sku,
+        preco: productData.price,
+        tipo: 'P',
+        situacao: 'A',
+        formato: 'S',
+        descricaoCurta: productData.description?.substring(0, 255) || productData.name,
+        descricao: productData.description || '',
+        unidade: 'UN',
+        pesoLiquido: 0.1,
+        pesoBruto: 0.1,
+        estoque: {
+          minimo: 0,
+          maximo: 9999,
+          crossdocking: 0,
+          localizacao: ''
+        },
+        actionEstoque: 'A',
+        dimensoes: {
+          largura: 0,
+          altura: 0,
+          profundidade: 0,
+          unidadeMedida: 1
+        },
+        marca: '',
+        gtin: '',
+        gtinEmbalagem: '',
+        tipoProducao: 'P',
+        condicao: 0,
+        freteGratis: false,
+        linkExterno: '',
+        observacoes: '',
+        descricaoComplementar: '',
+        categoria: {
+          id: productData.blingCategoryId || null
+        },
+        estoquePorDeposito: [
+          {
+            saldo: productData.stock,
+            depositoId: null
+          }
+        ]
+      };
+
+      if (productData.blingImageUrl) {
+        blingProductData.imagem = {
+          externa: {
+            url: productData.blingImageUrl
+          }
+        };
+        console.log('Adding Bling-hosted image to product:', productData.blingImageUrl);
+      }
+
+      console.log('Sending product to Bling:', JSON.stringify(blingProductData, null, 2));
+
+      const response = await axios.post(
+        `${this.apiUrl}/produtos`,
+        blingProductData,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      console.log('Product successfully created in Bling:', response.data);
+
+      return {
+        success: true,
+        data: response.data,
+        message: 'Product successfully created in Bling ERP',
+      };
+    } catch (error) {
+      console.error('Failed to push product to Bling:', JSON.stringify(error.response?.data, null, 2) || error.message);
+
+      if (error.response?.status === 401) {
+        return {
+          success: false,
+          error: 'Authentication failed. Please reconnect your Bling account.',
+          code: 'AUTH_ERROR',
+        };
+      }
+
+      if (error.response?.status === 400) {
+        return {
+          success: false,
+          error: 'Invalid product data. Please check the product details.',
+          code: 'VALIDATION_ERROR',
+          details: error.response?.data,
+        };
+      }
+
+      return {
+        success: false,
+        error: error.message || 'Failed to create product in Bling ERP',
+        code: 'PUSH_ERROR',
+        details: error.response?.data,
+      };
+    }
   }
 }

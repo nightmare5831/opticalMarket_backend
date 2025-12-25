@@ -18,27 +18,41 @@ model User {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   orders     Order[]
+  products   Product[]
+  categories Category[]
   blingToken BlingToken?
 }
 
 model Category {
-  id       String    @id @default(uuid())
-  name     String
-  slug     String    @unique
-  products Product[]
+  id           String    @id @default(uuid())
+  name         String
+  slug         String
+  blingId      Int?
+  userId       String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  products     Product[]
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([slug, userId])
+  @@unique([blingId, userId])
 }
 
 model Product {
-  id         String      @id @default(uuid())
-  sku        String      @unique
-  name       String
-  price      Decimal     @db.Decimal(10, 2)
-  stock      Int         @default(0)
-  categoryId String
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  orderItems OrderItem[]
-  category   Category    @relation(fields: [categoryId], references: [id])
+  id          String      @id @default(uuid())
+  sku         String      @unique
+  name        String
+  description String?     @db.Text
+  price       Decimal     @db.Decimal(10, 2)
+  stock       Int         @default(0)
+  images      String[]    @default([])
+  sellerId    String?
+  categoryId  String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  orderItems  OrderItem[]
+  category    Category    @relation(fields: [categoryId], references: [id])
+  seller      User?       @relation(fields: [sellerId], references: [id])
 }
 
 model Order {
