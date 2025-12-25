@@ -64,4 +64,11 @@ export class BlingController {
     const userId = req.user.sub;
     return await this.blingService.syncProducts(userId);
   }
+
+  @Get('sync/categories')
+  @UseGuards(JwtAuthGuard)
+  async syncCategories(@Request() req: any) {
+    const userId = req.user.sub;
+    return await this.blingService.syncCategories(userId);
+  }
 }
