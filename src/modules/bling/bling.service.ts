@@ -196,6 +196,46 @@ export class BlingService {
     }
   }
 
+  async updateCategoryInBling(userId: string, blingId: number, categoryName: string): Promise<any> {
+    try {
+      const accessToken = await this.getValidAccessToken(userId);
+
+      const response = await axios.put(
+        `${this.apiUrl}/categorias/produtos/${blingId}`,
+        { descricao: categoryName },
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      return {
+        success: true,
+        data: response.data,
+      };
+    } catch (error) {
+      console.error('Failed to update category in Bling:', error.response?.data || error.message);
+
+      if (error.response?.status === 401) {
+        return {
+          success: false,
+          error: 'Authentication failed. Please reconnect your Bling account.',
+          code: 'AUTH_ERROR',
+        };
+      }
+
+      return {
+        success: false,
+        error: error.message || 'Failed to update category in Bling ERP',
+        code: 'UPDATE_ERROR',
+        details: error.response?.data,
+      };
+    }
+  }
+
   async syncCategories(userId: string) {
     try {
       const accessToken = await this.getValidAccessToken(userId);
@@ -305,8 +345,17 @@ export class BlingService {
 
       const blingProducts = response.data.data || [];
 
+      // Delete all existing products for this user (or unowned products) before syncing
+      await this.prisma.product.deleteMany({
+        where: {
+          OR: [
+            { sellerId: userId },
+            { sellerId: null },
+          ],
+        },
+      });
+
       if (blingProducts.length === 0) {
-        console.log('⚠️ No products found in Bling ERP. The account may be empty or you need to add products first.');
         return {
           success: true,
           data: [],
@@ -370,29 +419,17 @@ export class BlingService {
             }
           }
 
-          const productData = {
-            sku: blingProduct.codigo,
-            name: blingProduct.nome || 'Unnamed Product',
-            description: blingProduct.descricao || null,
-            price: parseFloat(blingProduct.preco) || 0,
-            stock: blingProduct.estoque?.saldoVirtualTotal || 0,
-            images: blingProduct.imagemURL ? [blingProduct.imagemURL] : [],
-            categoryId: categoryId,
-            sellerId: userId,
-          };
-
-          const savedProduct = await this.prisma.product.upsert({
-            where: { sku: productData.sku },
-            update: {
-              name: productData.name,
-              description: productData.description,
-              price: productData.price,
-              stock: productData.stock,
-              images: productData.images,
-              categoryId: productData.categoryId,
+          const savedProduct = await this.prisma.product.create({
+            data: {
+              sku: blingProduct.codigo,
+              name: blingProduct.nome || 'Unnamed Product',
+              description: blingProduct.descricao || null,
+              price: parseFloat(blingProduct.preco) || 0,
+              stock: blingProduct.estoque?.saldoVirtualTotal || 0,
+              images: blingProduct.imagemURL ? [blingProduct.imagemURL] : [],
+              categoryId: categoryId,
               sellerId: userId,
             },
-            create: productData,
           });
 
           savedProducts.push(savedProduct);

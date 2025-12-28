@@ -61,12 +61,11 @@ export class ProductsController {
     @Body() data: { sku: string; name: string; description?: string; price: string; stock: string; categoryId: string },
     @UploadedFile() image?: Express.Multer.File
   ) {
-    const sellerId = req.user.role === 'SELLER' ? req.user.sub : null;
     return this.productsService.create({
       ...data,
       price: parseFloat(data.price),
       stock: parseInt(data.stock),
-      sellerId,
+      sellerId: req.user.sub,
       imageFile: image
     });
   }

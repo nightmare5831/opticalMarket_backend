@@ -20,6 +20,7 @@ model User {
   orders     Order[]
   products   Product[]
   categories Category[]
+  addresses  Address[]
   blingToken BlingToken?
 }
 
@@ -55,15 +56,37 @@ model Product {
   seller      User?       @relation(fields: [sellerId], references: [id])
 }
 
+model Address {
+  id           String   @id @default(uuid())
+  userId       String
+  street       String
+  number       String
+  complement   String?
+  neighborhood String
+  city         String
+  state        String
+  zipCode      String
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders       Order[]
+}
+
 model Order {
-  id        String      @id @default(uuid())
-  userId    String
-  status    OrderStatus @default(PENDING)
-  total     Decimal     @db.Decimal(10, 2)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  user      User        @relation(fields: [userId], references: [id])
-  items     OrderItem[]
+  id            String        @id @default(uuid())
+  userId        String
+  addressId     String?
+  status        OrderStatus   @default(PENDING)
+  paymentMethod PaymentMethod?
+  paymentId     String?
+  paymentStatus PaymentStatus @default(PENDING)
+  total         Decimal       @db.Decimal(10, 2)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  user          User          @relation(fields: [userId], references: [id])
+  address       Address?      @relation(fields: [addressId], references: [id])
+  items         OrderItem[]
 }
 
 model OrderItem {
@@ -95,6 +118,19 @@ enum OrderStatus {
   SHIPPED
   DELIVERED
   CANCELLED
+}
+
+enum PaymentMethod {
+  PIX
+  CREDIT_CARD
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  IN_PROCESS
 }
 
 model BlingToken {

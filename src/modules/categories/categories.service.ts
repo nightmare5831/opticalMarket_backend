@@ -65,13 +65,23 @@ export class CategoriesService {
   }
 
   async update(id: string, data: Partial<{ name: string; slug: string }>, userId: string) {
-    // First check if category belongs to user
     const category = await this.prisma.category.findFirst({
       where: { id, userId },
     });
 
     if (!category) {
       throw new Error('Category not found or you do not have permission to update it');
+    }
+
+    // If Bling is connected and category has blingId, update Bling first
+    if (data.name && category.blingId) {
+      const isBlingConnected = await this.blingService.isConfigured(userId);
+      if (isBlingConnected) {
+        const blingResult = await this.blingService.updateCategoryInBling(userId, category.blingId, data.name);
+        if (!blingResult.success) {
+          throw new Error(blingResult.error || 'Failed to update category in Bling');
+        }
+      }
     }
 
     return this.prisma.category.update({

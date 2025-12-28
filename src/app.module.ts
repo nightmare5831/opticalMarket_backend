@@ -5,6 +5,9 @@ import { AuthModule } from './modules/auth/auth.module';
 import { BlingModule } from './modules/bling/bling.module';
 import { ProductsModule } from './modules/products/products.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { AddressModule } from './modules/address/address.module';
+import { OrdersModule } from './modules/orders/orders.module';
+import { PaymentModule } from './modules/payment/payment.module';
 
 @Module({
   imports: [
@@ -14,6 +17,9 @@ import { CategoriesModule } from './modules/categories/categories.module';
     BlingModule,
     ProductsModule,
     CategoriesModule,
+    AddressModule,
+    OrdersModule,
+    PaymentModule,
   ],
 })
 export class AppModule {}
