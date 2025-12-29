@@ -2,14 +2,11 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
-import { PaymentStatus, PaymentMethod } from '@prisma/client';
+import { PaymentStatus } from '@prisma/client';
 import axios from 'axios';
 
-interface CreatePaymentData {
+interface CreateCheckoutData {
   orderId: string;
-  paymentMethod: PaymentMethod;
-  cardToken?: string;
-  installments?: number;
   payerEmail: string;
 }
 
@@ -27,9 +24,8 @@ export class PaymentService {
       this.configService.get<string>('MERCADO_PAGO_ACCESS_TOKEN') || '';
   }
 
-  async createPayment(userId: string, data: CreatePaymentData) {
-    const { orderId, paymentMethod, cardToken, installments, payerEmail } =
-      data;
+  async createCheckout(userId: string, data: CreateCheckoutData) {
+    const { orderId, payerEmail } = data;
 
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
@@ -50,57 +46,65 @@ export class PaymentService {
       throw new BadRequestException('Order already paid');
     }
 
-    const paymentData: any = {
-      transaction_amount: Number(order.total),
-      description: `Order #${order.id.slice(0, 8)}`,
-      external_reference: order.id,
+    const frontendUrl = this.configService.get('FRONTEND_URL');
+
+    // Build items for Checkout Pro
+    const items = order.items.map((item) => ({
+      id: item.productId,
+      title: item.product.name,
+      quantity: item.quantity,
+      unit_price: Number(item.price),
+      currency_id: 'BRL',
+    }));
+
+    // Only allow PIX and Credit Card
+    const preferenceData: any = {
+      items,
       payer: {
         email: payerEmail,
       },
+      external_reference: order.id,
       notification_url: `${this.configService.get('API_URL')}/api/payment/webhook`,
+      statement_descriptor: 'OPTICAL MARKET',
+      payment_methods: {
+        excluded_payment_types: [
+          { id: 'debit_card' },
+          { id: 'ticket' },
+          { id: 'atm' },
+          { id: 'prepaid_card' },
+        ],
+        installments: 12,
+      },
     };
 
-    if (paymentMethod === PaymentMethod.PIX) {
-      paymentData.payment_method_id = 'pix';
-    } else if (paymentMethod === PaymentMethod.CREDIT_CARD) {
-      if (!cardToken) {
-        throw new BadRequestException(
-          'Card token is required for credit card payment',
-        );
-      }
-      paymentData.token = cardToken;
-      paymentData.installments = installments || 1;
+    // Only add back_urls if frontend URL is properly configured (not localhost for sandbox)
+    if (frontendUrl && !frontendUrl.includes('localhost')) {
+      preferenceData.back_urls = {
+        success: `${frontendUrl}/checkout/confirmation?orderId=${order.id}`,
+        failure: `${frontendUrl}/checkout/payment?orderId=${order.id}&status=failure`,
+        pending: `${frontendUrl}/checkout/payment?orderId=${order.id}&status=pending`,
+      };
+      preferenceData.auto_return = 'approved';
     }
 
     try {
       const response = await axios.post(
-        `${this.baseUrl}/v1/payments`,
-        paymentData,
+        `${this.baseUrl}/checkout/preferences`,
+        preferenceData,
         {
           headers: {
             Authorization: `Bearer ${this.accessToken}`,
             'Content-Type': 'application/json',
-            'X-Idempotency-Key': `${order.id}-${Date.now()}`,
           },
         },
       );
 
-      const payment = response.data;
-
-      await this.ordersService.updatePaymentStatus(
-        orderId,
-        String(payment.id),
-        this.mapPaymentStatus(payment.status),
-      );
+      const preference = response.data;
 
       return {
-        paymentId: payment.id,
-        status: payment.status,
-        statusDetail: payment.status_detail,
-        pixQrCode: payment.point_of_interaction?.transaction_data?.qr_code,
-        pixQrCodeBase64:
-          payment.point_of_interaction?.transaction_data?.qr_code_base64,
-        ticketUrl: payment.point_of_interaction?.transaction_data?.ticket_url,
+        preferenceId: preference.id,
+        initPoint: preference.init_point, // Production URL
+        sandboxInitPoint: preference.sandbox_init_point, // Sandbox URL for testing
       };
     } catch (error: any) {
       console.error(
@@ -108,7 +112,7 @@ export class PaymentService {
         error.response?.data || error.message,
       );
       throw new BadRequestException(
-        error.response?.data?.message || 'Payment processing failed',
+        error.response?.data?.message || 'Failed to create checkout session',
       );
     }
   }
@@ -160,7 +164,6 @@ export class PaymentService {
         paymentStatus: true,
         paymentMethod: true,
         status: true,
-        total: true,
       },
     });
 
