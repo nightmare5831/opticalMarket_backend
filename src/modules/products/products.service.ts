@@ -127,7 +127,6 @@ export class ProductsService {
       include: { category: true, seller: { select: { id: true, name: true, email: true } } },
     });
 
-    console.log('Product created successfully:', product);
     return product;
   }
 

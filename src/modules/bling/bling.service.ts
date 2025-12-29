@@ -345,6 +345,11 @@ export class BlingService {
 
       const blingProducts = response.data.data || [];
 
+      // Debug: log the first product to see the actual structure from Bling
+      if (blingProducts.length > 0) {
+        console.log('Bling product structure sample:', JSON.stringify(blingProducts[0], null, 2));
+      }
+
       // Delete all existing products for this user (or unowned products) before syncing
       await this.prisma.product.deleteMany({
         where: {
@@ -367,57 +372,62 @@ export class BlingService {
         };
       }
 
-      let defaultCategory = await this.prisma.category.findFirst({
-        where: {
-          slug: 'uncategorized',
-          userId: userId,
-        },
-      });
-
-      if (!defaultCategory) {
-        defaultCategory = await this.prisma.category.create({
-          data: {
-            name: 'Uncategorized',
-            slug: 'uncategorized',
-            userId: userId,
-          },
-        });
-      }
-
       const savedProducts = [];
       const errors = [];
 
-      for (const blingProduct of blingProducts) {
+      for (const blingProductBasic of blingProducts) {
         try {
-          if (!blingProduct.codigo || blingProduct.codigo.trim() === '') {
+          if (!blingProductBasic.codigo || blingProductBasic.codigo.trim() === '') {
             errors.push({
-              product: blingProduct.nome || 'Unknown',
+              product: blingProductBasic.nome || 'Unknown',
               error: 'Missing SKU (codigo)',
             });
             continue;
           }
 
-          // Find category by name if it exists in Bling product
-          let categoryId = defaultCategory.id;
-          if (blingProduct.categoria?.descricao) {
-            const categorySlug = blingProduct.categoria.descricao
-              .toLowerCase()
-              .normalize('NFD')
-              .replace(/[\u0300-\u036f]/g, '')
-              .replace(/[^a-z0-9]+/g, '-')
-              .replace(/^-+|-+$/g, '');
-
-            const category = await this.prisma.category.findFirst({
-              where: {
-                slug: categorySlug,
-                userId: userId,
+          // Fetch full product details to get custom fields (R2_link)
+          const productDetailResponse = await axios.get(
+            `${this.apiUrl}/produtos/${blingProductBasic.id}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/json',
               },
-            });
-
-            if (category) {
-              categoryId = category.id;
             }
+          );
+          const blingProduct = productDetailResponse.data.data || blingProductBasic;
+
+          // Debug: log full product detail for first product
+          if (savedProducts.length === 0) {
+            console.log('Bling product FULL detail sample:', JSON.stringify(blingProduct, null, 2));
           }
+
+          // Find category by blingId - skip product if no valid category
+          if (!blingProduct.categoria?.id) {
+            errors.push({
+              product: blingProduct.nome || blingProduct.codigo || 'Unknown',
+              error: 'No category assigned in Bling',
+            });
+            continue;
+          }
+
+          const category = await this.prisma.category.findFirst({
+            where: {
+              blingId: blingProduct.categoria.id,
+              userId: userId,
+            },
+          });
+
+          if (!category) {
+            errors.push({
+              product: blingProduct.nome || blingProduct.codigo || 'Unknown',
+              error: `Category with Bling ID ${blingProduct.categoria.id} not found`,
+            });
+            continue;
+          }
+
+          // Get image URL from linkExterno
+          const images: string[] = blingProduct.linkExterno ? [blingProduct.linkExterno] : [];
 
           const savedProduct = await this.prisma.product.create({
             data: {
@@ -426,8 +436,8 @@ export class BlingService {
               description: blingProduct.descricao || null,
               price: parseFloat(blingProduct.preco) || 0,
               stock: blingProduct.estoque?.saldoVirtualTotal || 0,
-              images: blingProduct.imagemURL ? [blingProduct.imagemURL] : [],
-              categoryId: categoryId,
+              images: images,
+              categoryId: category.id,
               sellerId: userId,
             },
           });
@@ -435,7 +445,7 @@ export class BlingService {
           savedProducts.push(savedProduct);
         } catch (productError) {
           errors.push({
-            product: blingProduct.nome || blingProduct.codigo || 'Unknown',
+            product: blingProductBasic.nome || blingProductBasic.codigo || 'Unknown',
             error: productError.message,
           });
         }
@@ -565,30 +575,13 @@ export class BlingService {
         tipoProducao: 'P',
         condicao: 0,
         freteGratis: false,
-        linkExterno: '',
+        linkExterno: productData.blingImageUrl || '',
         observacoes: '',
         descricaoComplementar: '',
         categoria: {
           id: productData.blingCategoryId || null
         },
-        estoquePorDeposito: [
-          {
-            saldo: productData.stock,
-            depositoId: null
-          }
-        ]
       };
-
-      if (productData.blingImageUrl) {
-        blingProductData.imagem = {
-          externa: {
-            url: productData.blingImageUrl
-          }
-        };
-        console.log('Adding Bling-hosted image to product:', productData.blingImageUrl);
-      }
-
-      console.log('Sending product to Bling:', JSON.stringify(blingProductData, null, 2));
 
       const response = await axios.post(
         `${this.apiUrl}/produtos`,
@@ -601,8 +594,6 @@ export class BlingService {
           },
         }
       );
-
-      console.log('Product successfully created in Bling:', response.data);
 
       return {
         success: true,
