@@ -48,7 +48,6 @@ export class PaymentService {
 
     const frontendUrl = this.configService.get('FRONTEND_URL');
 
-    // Build items for Checkout Pro
     const items = order.items.map((item) => ({
       id: item.productId,
       title: item.product.name,
@@ -57,7 +56,6 @@ export class PaymentService {
       currency_id: 'BRL',
     }));
 
-    // Only allow PIX and Credit Card
     const preferenceData: any = {
       items,
       payer: {
