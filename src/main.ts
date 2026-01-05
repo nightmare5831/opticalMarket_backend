@@ -8,7 +8,7 @@ async function bootstrap() {
   // Allow multiple origins (localhost + production frontend)
   const allowedOrigins = [
     'http://localhost:8080',
-    process.env.FRONTEND_URL || 'https://optical-market-frontend.vercel.app',
+    process.env.FRONTEND_URL || 'https://optical-frontend-five.vercel.app/',
   ].filter(Boolean);
 
   app.enableCors({
@@ -28,6 +28,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Server running on http://localhost:${port}`);
+  const url = await app.getUrl;
+  console.log(`Server running on ${url}`);
 }
 bootstrap();
