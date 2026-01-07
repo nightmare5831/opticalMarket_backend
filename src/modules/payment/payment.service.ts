@@ -78,9 +78,9 @@ export class PaymentService {
     // Only add back_urls if frontend URL is properly configured (not localhost for sandbox)
     if (frontendUrl && !frontendUrl.includes('localhost')) {
       preferenceData.back_urls = {
-        success: `${frontendUrl}/checkout/confirmation?orderId=${order.id}`,
-        failure: `${frontendUrl}/checkout/payment?orderId=${order.id}&status=failure`,
-        pending: `${frontendUrl}/checkout/payment?orderId=${order.id}&status=pending`,
+        success: `${frontendUrl}/orders?confirmed`,
+        failure: `${frontendUrl}/orders?confirmed&status=failure`,
+        pending: `${frontendUrl}/orders?confirmed&status=pending`,
       };
       preferenceData.auto_return = 'approved';
     }
