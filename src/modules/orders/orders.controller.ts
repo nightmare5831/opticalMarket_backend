@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   UseGuards,
@@ -18,7 +19,9 @@ import {
 import { Type } from 'class-transformer';
 import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { PaymentMethod } from '@prisma/client';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles, UserRole } from '../../common/decorators/roles.decorator';
+import { PaymentMethod, OrderStatus } from '@prisma/client';
 
 class CartItemDto {
   @IsString()
@@ -42,6 +45,11 @@ class CreateOrderDto {
   paymentMethod: PaymentMethod;
 }
 
+class UpdateOrderStatusDto {
+  @IsEnum(OrderStatus)
+  status: OrderStatus;
+}
+
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
@@ -50,6 +58,13 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   async findAll(@Request() req: any) {
     return this.ordersService.findAll(req.user.sub);
+  }
+
+  @Get('seller')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  async findSellerOrders(@Request() req: any) {
+    return this.ordersService.findSellerOrders(req.user.sub);
   }
 
   @Get(':id')
@@ -62,5 +77,23 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   async create(@Request() req: any, @Body() data: CreateOrderDto) {
     return this.ordersService.create(req.user.sub, data);
+  }
+
+  @Patch(':id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() data: UpdateOrderStatusDto,
+    @Request() req: any,
+  ) {
+    return this.ordersService.updateOrderStatus(id, req.user.sub, data.status);
+  }
+
+  @Post(':id/bling')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  async createBlingOrder(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.createBlingOrder(id, req.user.sub);
   }
 }
