@@ -532,6 +532,113 @@ export class BlingService {
     };
   }
 
+  async createOrderInBling(userId: string, orderData: {
+    orderNumber: string;
+    customer: {
+      name: string;
+      email: string;
+    };
+    address: {
+      street: string;
+      number: string;
+      complement?: string;
+      neighborhood: string;
+      city: string;
+      state: string;
+      zipCode: string;
+    };
+    items: Array<{
+      sku: string;
+      name: string;
+      quantity: number;
+      price: number;
+    }>;
+    total: number;
+    paymentMethod: string;
+  }): Promise<any> {
+    try {
+      const accessToken = await this.getValidAccessToken(userId);
+
+      const blingOrderData = {
+        numero: orderData.orderNumber,
+        data: new Date().toISOString().split('T')[0],
+        contato: {
+          nome: orderData.customer.name,
+          email: orderData.customer.email,
+        },
+        itens: orderData.items.map(item => ({
+          codigo: item.sku,
+          descricao: item.name,
+          quantidade: item.quantity,
+          valor: item.price,
+          unidade: 'UN',
+        })),
+        transporte: {
+          enderecoEntrega: {
+            endereco: orderData.address.street,
+            numero: orderData.address.number,
+            complemento: orderData.address.complement || '',
+            bairro: orderData.address.neighborhood,
+            municipio: orderData.address.city,
+            uf: orderData.address.state,
+            cep: orderData.address.zipCode.replace(/\D/g, ''),
+            pais: 'Brasil',
+          },
+        },
+        observacoes: `Payment: ${orderData.paymentMethod}`,
+      };
+
+      console.log('Creating order in Bling:', JSON.stringify(blingOrderData, null, 2));
+
+      const response = await axios.post(
+        `${this.apiUrl}/pedidos/vendas`,
+        blingOrderData,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      console.log('Order successfully created in Bling:', response.data);
+
+      return {
+        success: true,
+        data: response.data,
+        blingOrderId: response.data?.data?.id,
+        message: 'Order successfully created in Bling ERP',
+      };
+    } catch (error) {
+      console.error('Failed to create order in Bling:', JSON.stringify(error.response?.data, null, 2) || error.message);
+
+      if (error.response?.status === 401) {
+        return {
+          success: false,
+          error: 'Authentication failed. Please reconnect your Bling account.',
+          code: 'AUTH_ERROR',
+        };
+      }
+
+      if (error.response?.status === 400) {
+        return {
+          success: false,
+          error: 'Invalid order data. Please check the order details.',
+          code: 'VALIDATION_ERROR',
+          details: error.response?.data,
+        };
+      }
+
+      return {
+        success: false,
+        error: error.message || 'Failed to create order in Bling ERP',
+        code: 'CREATE_ERROR',
+        details: error.response?.data,
+      };
+    }
+  }
+
   async pushProductToBling(userId: string, productData: {
     sku: string;
     name: string;

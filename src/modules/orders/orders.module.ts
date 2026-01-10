@@ -4,10 +4,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { BlingModule } from '../bling/bling.module';
 
 @Module({
   imports: [
     PrismaModule,
+    BlingModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
