@@ -6,13 +6,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Allow multiple origins (localhost + production frontend)
-  const allowedOrigins = [
-    'http://localhost:8080',
-    process.env.FRONTEND_URL || 'https://optical-frontend-five.vercel.app/',
-  ].filter(Boolean);
-
   app.enableCors({
-    origin: allowedOrigins,
+    origin: true, // Allow all origins in development
     credentials: true,
   });
 
@@ -27,8 +22,8 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
-  const url = await app.getUrl();
-  console.log(`Server running on ${url}`);
+  await app.listen(port, '0.0.0.0'); // Listen on all interfaces (IPv4)
+
+  console.log(`Server running on ${process.env.API_URL}`);
 }
 bootstrap();
