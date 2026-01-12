@@ -622,9 +622,12 @@ export class BlingService {
       }
 
       if (error.response?.status === 400) {
+        const blingError = error.response?.data?.error?.description ||
+                          error.response?.data?.error?.message ||
+                          JSON.stringify(error.response?.data);
         return {
           success: false,
-          error: 'Invalid order data. Please check the order details.',
+          error: `Invalid order data: ${blingError}`,
           code: 'VALIDATION_ERROR',
           details: error.response?.data,
         };

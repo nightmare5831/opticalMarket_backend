@@ -340,6 +340,27 @@ export class OrdersService {
       throw new BadRequestException('Order has no shipping address');
     }
 
+    // Validate required fields before sending to Bling
+    if (!order.user.name) {
+      throw new BadRequestException('Customer name is required for Bling sync');
+    }
+    if (!order.user.email) {
+      throw new BadRequestException('Customer email is required for Bling sync');
+    }
+
+    // Validate all items have SKUs
+    const itemsWithoutSku = order.items.filter(item => !item.product.sku);
+    if (itemsWithoutSku.length > 0) {
+      const productNames = itemsWithoutSku.map(i => i.product.name).join(', ');
+      throw new BadRequestException(`Products missing SKU: ${productNames}`);
+    }
+
+    // Validate address fields
+    if (!order.address.street || !order.address.number || !order.address.neighborhood ||
+        !order.address.city || !order.address.state || !order.address.zipCode) {
+      throw new BadRequestException('Address is incomplete. All fields (street, number, neighborhood, city, state, zipCode) are required.');
+    }
+
     const orderNumber = order.id.slice(0, 8).toUpperCase();
 
     const result = await this.blingService.createOrderInBling(sellerId, {
