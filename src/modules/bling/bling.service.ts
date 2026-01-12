@@ -10,7 +10,7 @@ export class BlingService {
   private prisma: PrismaClient;
 
   constructor(private config: ConfigService) {
-    this.redirectUri = this.config.get('BLING_REDIRECT_URI') || 'https://opticalmarket-backend.onrender.com/api/bling/callback';
+    this.redirectUri = this.config.get('BLING_REDIRECT_URI') || 'https://opticalmarket-backend-6pfl.onrender.com/api/bling/callback';
     this.apiUrl = this.config.get('BLING_API_URL') || 'https://www.bling.com.br/Api/v3';
     this.prisma = new PrismaClient();
   }
