@@ -56,6 +56,24 @@ export class PaymentService {
       currency_id: 'BRL',
     }));
 
+    // Calculate shipping cost (total - sum of item prices)
+    const itemsTotal = order.items.reduce(
+      (sum, item) => sum + Number(item.price) * item.quantity,
+      0,
+    );
+    const shippingCost = Number(order.total) - itemsTotal;
+
+    // Add shipping as an item if there's a shipping cost
+    if (shippingCost > 0) {
+      items.push({
+        id: 'shipping',
+        title: `Shipping (${order.shippingMethod || 'Standard'})`,
+        quantity: 1,
+        unit_price: shippingCost,
+        currency_id: 'BRL',
+      });
+    }
+
     const preferenceData: any = {
       items,
       payer: {

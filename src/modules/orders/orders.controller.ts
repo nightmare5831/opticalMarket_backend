@@ -46,6 +46,10 @@ class CreateOrderDto {
 
   @IsString()
   shippingMethod: string;
+
+  @IsNumber()
+  @Min(0)
+  shippingCost: number;
 }
 
 class UpdateOrderStatusDto {

@@ -18,6 +18,7 @@ interface CreateOrderData {
   items: CartItem[];
   paymentMethod: PaymentMethod;
   shippingMethod: string;
+  shippingCost: number;
 }
 
 @Injectable()
@@ -110,6 +111,9 @@ export class OrdersService {
         price: product.price,
       };
     });
+
+    // Add shipping cost to total
+    total += data.shippingCost;
 
     const order = await this.prisma.$transaction(async (tx) => {
       const newOrder = await tx.order.create({
