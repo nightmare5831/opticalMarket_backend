@@ -383,6 +383,7 @@ export class OrdersService {
         name: item.product.name,
         quantity: item.quantity,
         price: Number(item.price),
+        blingId: item.product.blingId,
       })),
       total: Number(order.total),
       paymentMethod: order.paymentMethod || 'N/A',
