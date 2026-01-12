@@ -7,7 +7,12 @@ async function bootstrap() {
 
   // Allow multiple origins (localhost + production frontend)
   app.enableCors({
-    origin: true, // Allow all origins in development
+    origin: [
+      'http://localhost:8080',
+      'https://optical-market-frontend.vercel.app',
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     credentials: true,
   });
 
