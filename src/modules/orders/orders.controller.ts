@@ -43,6 +43,9 @@ class CreateOrderDto {
 
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;
+
+  @IsString()
+  shippingMethod: string;
 }
 
 class UpdateOrderStatusDto {

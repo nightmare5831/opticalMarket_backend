@@ -17,7 +17,7 @@ interface CreateOrderData {
   addressId: string;
   items: CartItem[];
   paymentMethod: PaymentMethod;
-  shippingMethod?: string;
+  shippingMethod: string;
 }
 
 @Injectable()
