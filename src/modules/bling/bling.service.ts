@@ -532,6 +532,60 @@ export class BlingService {
     };
   }
 
+  async findOrCreateContact(accessToken: string, customerData: {
+    name: string;
+    email: string;
+  }): Promise<number> {
+    // First, try to find existing contact by email
+    try {
+      const searchResponse = await axios.get(
+        `${this.apiUrl}/contatos`,
+        {
+          params: {
+            pesquisa: customerData.email,
+          },
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+          },
+        }
+      );
+
+      const contacts = searchResponse.data?.data || [];
+      if (contacts.length > 0) {
+        console.log('Found existing contact in Bling:', contacts[0].id);
+        return contacts[0].id;
+      }
+    } catch (error) {
+      console.log('Contact search failed, will create new:', error.message);
+    }
+
+    // Contact not found, create a new one
+    const contactData = {
+      nome: customerData.name,
+      tipo: 'F', // F = Pessoa Física (individual)
+      email: customerData.email,
+    };
+
+    console.log('Creating new contact in Bling:', contactData);
+
+    const createResponse = await axios.post(
+      `${this.apiUrl}/contatos`,
+      contactData,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const newContactId = createResponse.data?.data?.id;
+    console.log('Created new contact in Bling:', newContactId);
+    return newContactId;
+  }
+
   async createOrderInBling(userId: string, orderData: {
     orderNumber: string;
     customer: {
@@ -559,12 +613,14 @@ export class BlingService {
     try {
       const accessToken = await this.getValidAccessToken(userId);
 
+      // Find or create the contact in Bling first
+      const contactId = await this.findOrCreateContact(accessToken, orderData.customer);
+
       const blingOrderData = {
         numero: orderData.orderNumber,
         data: new Date().toISOString().split('T')[0],
         contato: {
-          nome: orderData.customer.name,
-          email: orderData.customer.email,
+          id: contactId,
         },
         itens: orderData.items.map(item => ({
           codigo: item.sku,
