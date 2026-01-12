@@ -624,14 +624,22 @@ export class BlingService {
         contato: {
           id: contactId,
         },
-        itens: orderData.items.map(item => ({
-          id: item.blingId ? Number(item.blingId) : undefined,
-          codigo: item.sku,
-          descricao: item.name,
-          quantidade: item.quantity,
-          valor: item.price,
-          unidade: 'UN',
-        })),
+        itens: orderData.items.map(item => {
+          if (item.blingId) {
+            return {
+              id: Number(item.blingId),
+              quantidade: item.quantity,
+              valor: item.price,
+            };
+          }
+          return {
+            codigo: item.sku,
+            descricao: item.name,
+            quantidade: item.quantity,
+            valor: item.price,
+            unidade: 'UN',
+          };
+        }),
         transporte: {
           enderecoEntrega: {
             endereco: orderData.address.street,
