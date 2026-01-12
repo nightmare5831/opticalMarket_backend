@@ -439,7 +439,7 @@ export class BlingService {
               images: images,
               categoryId: category.id,
               sellerId: userId,
-              blingId: blingProduct.id,
+              blingId: blingProduct.id?.toString() || null,
             },
           });
 
