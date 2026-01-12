@@ -607,7 +607,7 @@ export class BlingService {
       name: string;
       quantity: number;
       price: number;
-      blingId?: bigint | null;
+      blingId?: string | null;
     }>;
     total: number;
     paymentMethod: string;
