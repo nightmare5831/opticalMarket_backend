@@ -439,6 +439,7 @@ export class BlingService {
               images: images,
               categoryId: category.id,
               sellerId: userId,
+              blingId: blingProduct.id,
             },
           });
 
@@ -606,6 +607,7 @@ export class BlingService {
       name: string;
       quantity: number;
       price: number;
+      blingId?: bigint | null;
     }>;
     total: number;
     paymentMethod: string;
@@ -623,6 +625,7 @@ export class BlingService {
           id: contactId,
         },
         itens: orderData.items.map(item => ({
+          id: item.blingId ? Number(item.blingId) : undefined,
           codigo: item.sku,
           descricao: item.name,
           quantidade: item.quantity,
