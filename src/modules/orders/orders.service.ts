@@ -17,6 +17,7 @@ interface CreateOrderData {
   addressId: string;
   items: CartItem[];
   paymentMethod: PaymentMethod;
+  shippingMethod?: string;
 }
 
 @Injectable()
@@ -116,6 +117,7 @@ export class OrdersService {
           userId,
           addressId,
           paymentMethod,
+          shippingMethod: data.shippingMethod,
           total,
           status: OrderStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,

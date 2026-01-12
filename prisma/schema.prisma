@@ -74,19 +74,20 @@ model Address {
 }
 
 model Order {
-  id            String        @id @default(uuid())
-  userId        String
-  addressId     String?
-  status        OrderStatus   @default(PENDING)
-  paymentMethod PaymentMethod?
-  paymentId     String?
-  paymentStatus PaymentStatus @default(PENDING)
-  total         Decimal       @db.Decimal(10, 2)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  user          User          @relation(fields: [userId], references: [id])
-  address       Address?      @relation(fields: [addressId], references: [id])
-  items         OrderItem[]
+  id             String        @id @default(uuid())
+  userId         String
+  addressId      String?
+  status         OrderStatus   @default(PENDING)
+  paymentMethod  PaymentMethod?
+  paymentId      String?
+  paymentStatus  PaymentStatus @default(PENDING)
+  shippingMethod String?
+  total          Decimal       @db.Decimal(10, 2)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  user           User          @relation(fields: [userId], references: [id])
+  address        Address?      @relation(fields: [addressId], references: [id])
+  items          OrderItem[]
 }
 
 model OrderItem {
