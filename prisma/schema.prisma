@@ -14,7 +14,7 @@ model User {
   password   String
   name       String
   role       UserRole    @default(CUSTOMER)
-  status     UserStatus  @default(ACTIVE)
+  status     UserStatus  @default(PENDING)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   orders     Order[]
@@ -40,21 +40,22 @@ model Category {
 }
 
 model Product {
-  id          String      @id @default(uuid())
-  sku         String      @unique
+  id          String        @id @default(uuid())
+  sku         String        @unique
   name        String
-  description String?     @db.Text
-  price       Decimal     @db.Decimal(10, 2)
-  stock       Int         @default(0)
-  images      String[]    @default([])
+  description String?       @db.Text
+  price       Decimal       @db.Decimal(10, 2)
+  stock       Int           @default(0)
+  images      String[]      @default([])
   sellerId    String?
   categoryId  String
   blingId     String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  status      ProductStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   orderItems  OrderItem[]
-  category    Category    @relation(fields: [categoryId], references: [id])
-  seller      User?       @relation(fields: [sellerId], references: [id])
+  category    Category      @relation(fields: [categoryId], references: [id])
+  seller      User?         @relation(fields: [sellerId], references: [id])
 }
 
 model Address {
@@ -133,6 +134,12 @@ enum PaymentStatus {
   REJECTED
   CANCELLED
   IN_PROCESS
+}
+
+enum ProductStatus {
+  PENDING
+  APPROVED
+  CANCELLED
 }
 
 model BlingToken {

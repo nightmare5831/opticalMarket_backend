@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { UserRole } from '@prisma/client';
+import { UserRole, UserStatus } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -29,11 +29,12 @@ export class AuthService {
         password: await bcrypt.hash(data.password, 10),
         name: data.name,
         role: userRole,
+        status: UserStatus.PENDING,
       },
     });
 
     return {
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, status: user.status },
       token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
     };
   }
@@ -44,8 +45,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedException('Your account is pending approval. Please contact support.');
+    }
+
     return {
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, status: user.status },
       token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
     };
   }

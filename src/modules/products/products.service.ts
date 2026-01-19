@@ -14,7 +14,7 @@ export class ProductsService {
     const limit = filters?.limit || 20;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: any = { status: 'APPROVED' };
 
     if (filters?.categoryId) {
       where.categoryId = filters.categoryId;
