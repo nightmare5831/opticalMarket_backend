@@ -18,6 +18,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:8080',
       'https://optical-frontend-five.vercel.app',
+      'https://www.visaonaweb.com.br'
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
