@@ -1,11 +1,19 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { Logger } from 'nestjs-pino';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(Logger));
 
-  // Allow multiple origins (localhost + production frontend)
+  // Security headers
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  }));
+
   app.enableCors({
     origin: [
       'http://localhost:8080',
@@ -27,8 +35,9 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const port = process.env.PORT || 3000;
-  await app.listen(port, '0.0.0.0'); // Listen on all interfaces (IPv4)
+  await app.listen(port, '0.0.0.0');
 
-  console.log(`Server running on ${process.env.API_URL}`);
+  const logger = app.get(Logger);
+  logger.log(`Server running on ${process.env.API_URL}`, 'Bootstrap');
 }
 bootstrap();
