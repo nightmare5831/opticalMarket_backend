@@ -75,6 +75,11 @@ export class UpdateProductStatusDto {
   status: 'PENDING' | 'APPROVED' | 'CANCELLED';
 }
 
+export class UpdateOrderStatusDto {
+  @IsEnum(OrderStatus)
+  status: OrderStatus;
+}
+
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
@@ -108,6 +113,11 @@ export class AdminController {
   @Get('orders')
   getAllOrders(@Query() query: GetOrdersQueryDto) {
     return this.adminService.getAllOrders(query);
+  }
+
+  @Patch('orders/:id/status')
+  updateOrderStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
+    return this.adminService.updateOrderStatus(id, dto.status);
   }
 
   // ============ DASHBOARD ============
