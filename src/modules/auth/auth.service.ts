@@ -63,6 +63,9 @@ export class AuthService {
         role: user.role,
         status: user.status,
         sellerType: user.sellerType,
+        cnpj: user.cnpj,
+        legalCompanyName: user.legalCompanyName,
+        mercadoPagoConnected: user.mercadoPagoConnected,
       },
       token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
     };
@@ -89,6 +92,8 @@ export class AuthService {
         role: user.role,
         status: user.status,
         sellerType: user.sellerType,
+        cnpj: user.cnpj,
+        legalCompanyName: user.legalCompanyName,
         mercadoPagoConnected: user.mercadoPagoConnected,
       },
       token: this.jwtService.sign({
