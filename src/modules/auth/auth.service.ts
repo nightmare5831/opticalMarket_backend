@@ -29,7 +29,7 @@ export class AuthService {
         password: await bcrypt.hash(data.password, 10),
         name: data.name,
         role: userRole,
-        status: UserStatus.PENDING,
+        status: userRole === UserRole.CUSTOMER ? UserStatus.ACTIVE : UserStatus.PENDING,
       },
     });
 
