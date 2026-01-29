@@ -9,12 +9,16 @@ export class ProductsService {
     private blingService: BlingService,
   ) {}
 
-  async findAll(filters?: { categoryId?: string; minPrice?: number; maxPrice?: number; page?: number; limit?: number }) {
+  async findAll(filters?: { categoryId?: string; minPrice?: number; maxPrice?: number; productType?: string; page?: number; limit?: number }) {
     const page = filters?.page || 1;
     const limit = filters?.limit || 20;
     const skip = (page - 1) * limit;
 
-    const where: any = { status: 'APPROVED' };
+    // Only show APPROVED B2C products by default (for customer marketplace)
+    const where: any = {
+      status: 'APPROVED',
+      productType: filters?.productType || 'B2C',
+    };
 
     if (filters?.categoryId) {
       where.categoryId = filters.categoryId;
@@ -29,7 +33,7 @@ export class ProductsService {
     const [products, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        include: { category: true, seller: { select: { id: true, name: true, email: true } } },
+        include: { category: true, seller: { select: { id: true, name: true, email: true, sellerType: true } } },
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
@@ -70,6 +74,18 @@ export class ProductsService {
 
     if (existingProduct) {
       throw new Error(`Product with SKU ${data.sku} already exists`);
+    }
+
+    // Check seller status to determine if product should be submitted for approval
+    let isSubmittedForApproval = false;
+    if (data.sellerId) {
+      const seller = await this.prisma.user.findUnique({
+        where: { id: data.sellerId },
+        select: { status: true },
+      });
+      // Only submit for approval if seller is ACTIVE
+      // PENDING sellers can create drafts that are not submitted
+      isSubmittedForApproval = seller?.status === 'ACTIVE';
     }
 
     console.log('Image file received:', data.imageFile ? `Yes (${data.imageFile.originalname})` : 'No');
@@ -123,8 +139,9 @@ export class ProductsService {
       data: {
         ...productData,
         images: imageUrl ? [imageUrl] : [],
+        isSubmittedForApproval,
       },
-      include: { category: true, seller: { select: { id: true, name: true, email: true } } },
+      include: { category: true, seller: { select: { id: true, name: true, email: true, status: true } } },
     });
 
     return product;
@@ -171,6 +188,29 @@ export class ProductsService {
   async delete(id: string) {
     return this.prisma.product.delete({
       where: { id },
+    });
+  }
+
+  async submitForApproval(productId: string, sellerId: string) {
+    // Check if seller is ACTIVE before allowing submission
+    const seller = await this.prisma.user.findUnique({
+      where: { id: sellerId },
+      select: { status: true, role: true },
+    });
+
+    if (!seller || seller.role !== 'SELLER') {
+      throw new Error('Only sellers can submit products for approval');
+    }
+
+    if (seller.status !== 'ACTIVE') {
+      throw new Error('Your seller account must be approved before you can submit products for approval');
+    }
+
+    // Update product to mark as submitted
+    return this.prisma.product.update({
+      where: { id: productId, sellerId },
+      data: { isSubmittedForApproval: true },
+      include: { category: true, seller: { select: { id: true, name: true, email: true, status: true } } },
     });
   }
 }

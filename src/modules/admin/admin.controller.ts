@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { UserRole, UserStatus, OrderStatus } from '@prisma/client';
+import { UserRole, UserStatus, OrderStatus, SellerType } from '@prisma/client';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -34,6 +34,10 @@ export class GetUsersQueryDto {
   status?: UserStatus;
 
   @IsOptional()
+  @IsEnum(SellerType)
+  sellerType?: SellerType;
+
+  @IsOptional()
   @IsString()
   search?: string;
 }
@@ -46,6 +50,16 @@ export class UpdateUserRoleDto {
 export class UpdateUserStatusDto {
   @IsEnum(UserStatus)
   status: UserStatus;
+}
+
+export class UpdateBusinessInfoDto {
+  @IsOptional()
+  @IsString()
+  cnpj?: string;
+
+  @IsOptional()
+  @IsString()
+  legalCompanyName?: string;
 }
 
 export class GetOrdersQueryDto {
@@ -106,6 +120,11 @@ export class AdminController {
   @Patch('users/:id/status')
   updateUserStatus(@Param('id') id: string, @Body() dto: UpdateUserStatusDto) {
     return this.adminService.updateUserStatus(id, dto.status);
+  }
+
+  @Patch('users/:id/business-info')
+  updateBusinessInfo(@Param('id') id: string, @Body() dto: UpdateBusinessInfoDto) {
+    return this.adminService.updateBusinessInfo(id, dto);
   }
 
   // ============ ORDER OVERSIGHT ============

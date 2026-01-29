@@ -17,6 +17,18 @@ export class RegisterDto {
   @IsEnum(['CUSTOMER', 'SELLER'])
   @IsOptional()
   role?: string;
+
+  @IsEnum(['B2C_MERCHANT', 'B2B_SUPPLIER'])
+  @IsOptional()
+  sellerType?: string; // Only required if role is SELLER
+
+  @IsString()
+  @IsOptional()
+  cnpj?: string; // Brazilian company tax ID (for sellers)
+
+  @IsString()
+  @IsOptional()
+  legalCompanyName?: string; // Legal company name (for sellers)
 }
 
 export class LoginDto {
