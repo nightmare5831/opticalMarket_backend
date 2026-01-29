@@ -9,19 +9,24 @@ datasource db {
 }
 
 model User {
-  id         String      @id @default(uuid())
-  email      String      @unique
-  password   String
-  name       String
-  role       UserRole    @default(CUSTOMER)
-  status     UserStatus  @default(PENDING)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  orders     Order[]
-  products   Product[]
-  categories Category[]
-  addresses  Address[]
-  blingToken BlingToken?
+  id                    String      @id @default(uuid())
+  email                 String      @unique
+  password              String
+  name                  String
+  role                  UserRole    @default(CUSTOMER)
+  status                UserStatus  @default(PENDING)
+  sellerType            SellerType? 
+  cnpj                  String?     
+  legalCompanyName      String?     
+  mercadoPagoConnected  Boolean     @default(false) 
+  mercadoPagoAccountId  String?     
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  orders                Order[]
+  products              Product[]
+  categories            Category[]
+  addresses             Address[]
+  blingToken            BlingToken?
 }
 
 model Category {
@@ -40,22 +45,24 @@ model Category {
 }
 
 model Product {
-  id          String        @id @default(uuid())
-  sku         String        @unique
-  name        String
-  description String?       @db.Text
-  price       Decimal       @db.Decimal(10, 2)
-  stock       Int           @default(0)
-  images      String[]      @default([])
-  sellerId    String?
-  categoryId  String
-  blingId     String?
-  status      ProductStatus @default(PENDING)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  orderItems  OrderItem[]
-  category    Category      @relation(fields: [categoryId], references: [id])
-  seller      User?         @relation(fields: [sellerId], references: [id])
+  id                      String        @id @default(uuid())
+  sku                     String        @unique
+  name                    String
+  description             String?       @db.Text
+  price                   Decimal       @db.Decimal(10, 2)
+  stock                   Int           @default(0)
+  images                  String[]      @default([])
+  sellerId                String?
+  categoryId              String
+  blingId                 String?
+  status                  ProductStatus @default(PENDING)
+  productType             ProductType   @default(B2C) 
+  isSubmittedForApproval  Boolean       @default(false) 
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  orderItems              OrderItem[]
+  category                Category      @relation(fields: [categoryId], references: [id])
+  seller                  User?         @relation(fields: [sellerId], references: [id])
 }
 
 model Address {
@@ -140,6 +147,16 @@ enum ProductStatus {
   PENDING
   APPROVED
   CANCELLED
+}
+
+enum SellerType {
+  B2C_MERCHANT 
+  B2B_SUPPLIER
+}
+
+enum ProductType {
+  B2C 
+  B2B 
 }
 
 model BlingToken {

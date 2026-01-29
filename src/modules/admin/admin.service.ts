@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { UserRole, UserStatus, OrderStatus } from '@prisma/client';
+import { UserRole, UserStatus, OrderStatus, SellerType } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
@@ -13,14 +13,16 @@ export class AdminService {
     limit?: number;
     role?: UserRole;
     status?: UserStatus;
+    sellerType?: SellerType;
     search?: string;
   }) {
-    const { page = 1, limit = 10, role, status, search } = params;
+    const { page = 1, limit = 10, role, status, sellerType, search } = params;
     const skip = (page - 1) * limit;
 
     const where: any = {};
     if (role) where.role = role;
     if (status) where.status = status;
+    if (sellerType) where.sellerType = sellerType;
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -40,6 +42,10 @@ export class AdminService {
           name: true,
           role: true,
           status: true,
+          sellerType: true,
+          cnpj: true,
+          legalCompanyName: true,
+          mercadoPagoConnected: true,
           createdAt: true,
           updatedAt: true,
           _count: {
@@ -73,6 +79,11 @@ export class AdminService {
         name: true,
         role: true,
         status: true,
+        sellerType: true,
+        cnpj: true,
+        legalCompanyName: true,
+        mercadoPagoConnected: true,
+        mercadoPagoAccountId: true,
         createdAt: true,
         updatedAt: true,
         _count: {
@@ -107,6 +118,7 @@ export class AdminService {
         name: true,
         role: true,
         status: true,
+        sellerType: true,
       },
     });
   }
@@ -130,6 +142,38 @@ export class AdminService {
         name: true,
         role: true,
         status: true,
+        sellerType: true,
+        mercadoPagoConnected: true,
+      },
+    });
+  }
+
+  async updateBusinessInfo(id: string, data: { cnpj?: string; legalCompanyName?: string }) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role !== UserRole.SELLER) {
+      throw new BadRequestException('Can only update business info for seller accounts');
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        cnpj: data.cnpj,
+        legalCompanyName: data.legalCompanyName,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        status: true,
+        sellerType: true,
+        cnpj: true,
+        legalCompanyName: true,
+        mercadoPagoConnected: true,
       },
     });
   }
@@ -271,10 +315,15 @@ export class AdminService {
   // ============ PRODUCT MANAGEMENT ============
 
   async getAllProducts() {
+    // Only show products that have been submitted for approval
+    // This excludes drafts from PENDING sellers
     return this.prisma.product.findMany({
+      where: {
+        isSubmittedForApproval: true,
+      },
       include: {
         category: true,
-        seller: { select: { id: true, name: true, email: true } },
+        seller: { select: { id: true, name: true, email: true, status: true, sellerType: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

@@ -86,4 +86,11 @@ export class ProductsController {
   async delete(@Param('id') id: string) {
     return this.productsService.delete(id);
   }
+
+  @Post(':id/submit')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SELLER')
+  async submitForApproval(@Param('id') id: string, @Request() req: any) {
+    return this.productsService.submitForApproval(id, req.user.sub);
+  }
 }
