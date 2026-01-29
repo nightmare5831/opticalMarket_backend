@@ -151,11 +151,9 @@ export class ProductsService {
     const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
     const fs = require('fs');
 
-    const accountId = '6137017bca9a8bf23a027bb0e412e9a2';
-
     const s3Client = new S3Client({
       region: 'auto',
-      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      endpoint: process.env.R2_ENDPOINT!,
       credentials: {
         accessKeyId: process.env.R2_ACCESS_KEY_ID!,
         secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
