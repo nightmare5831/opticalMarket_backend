@@ -184,14 +184,23 @@ export class AdminService {
     page?: number;
     limit?: number;
     status?: OrderStatus;
+    paymentMethod?: string;
+    minTotal?: number;
+    maxTotal?: number;
     startDate?: string;
     endDate?: string;
   }) {
-    const { page = 1, limit = 10, status, startDate, endDate } = params;
+    const { page = 1, limit = 10, status, paymentMethod, minTotal, maxTotal, startDate, endDate } = params;
     const skip = (page - 1) * limit;
 
     const where: any = {};
     if (status) where.status = status;
+    if (paymentMethod) where.paymentMethod = paymentMethod;
+    if (minTotal !== undefined || maxTotal !== undefined) {
+      where.total = {};
+      if (minTotal !== undefined) where.total.gte = minTotal;
+      if (maxTotal !== undefined) where.total.lte = maxTotal;
+    }
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
