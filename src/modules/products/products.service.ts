@@ -76,16 +76,21 @@ export class ProductsService {
       throw new Error(`Product with SKU ${data.sku} already exists`);
     }
 
-    // Check seller status to determine if product should be submitted for approval
+    // Check seller status and type to determine approval and product type
     let isSubmittedForApproval = false;
+    let productType: 'B2C' | 'B2B' = 'B2C';
     if (data.sellerId) {
       const seller = await this.prisma.user.findUnique({
         where: { id: data.sellerId },
-        select: { status: true },
+        select: { status: true, sellerType: true },
       });
       // Only submit for approval if seller is ACTIVE
       // PENDING sellers can create drafts that are not submitted
       isSubmittedForApproval = seller?.status === 'ACTIVE';
+      // Map seller type to product type
+      if (seller?.sellerType === 'B2B_SUPPLIER') {
+        productType = 'B2B';
+      }
     }
 
     console.log('Image file received:', data.imageFile ? `Yes (${data.imageFile.originalname})` : 'No');
@@ -140,6 +145,7 @@ export class ProductsService {
         ...productData,
         images: imageUrl ? [imageUrl] : [],
         isSubmittedForApproval,
+        productType,
       },
       include: { category: true, seller: { select: { id: true, name: true, email: true, status: true } } },
     });
