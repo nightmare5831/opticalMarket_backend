@@ -16,6 +16,7 @@ export class ProductsController {
     @Query('categoryId') categoryId?: string,
     @Query('minPrice') minPrice?: string,
     @Query('maxPrice') maxPrice?: string,
+    @Query('productType') productType?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -23,6 +24,7 @@ export class ProductsController {
       categoryId,
       minPrice: minPrice ? parseFloat(minPrice) : undefined,
       maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
+      productType: productType || undefined,
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 20,
     });
