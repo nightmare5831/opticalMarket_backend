@@ -29,6 +29,48 @@ export class PaymentService {
     this.platformToken = this.configService.get<string>('MERCADO_PAGO_ACCESS_TOKEN') || '';
   }
 
+  async validateSellersMpConnection(productIds: string[]) {
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: {
+        id: true,
+        name: true,
+        sellerId: true,
+        seller: {
+          select: { id: true, name: true, mercadoPagoConnected: true },
+        },
+      },
+    });
+
+    const disconnectedSellers: { sellerName: string; productNames: string[] }[] = [];
+    const sellerMap = new Map<string, { name: string; connected: boolean; products: string[] }>();
+
+    for (const product of products) {
+      if (!product.sellerId || !product.seller) continue;
+      const existing = sellerMap.get(product.sellerId);
+      if (existing) {
+        existing.products.push(product.name);
+      } else {
+        sellerMap.set(product.sellerId, {
+          name: product.seller.name,
+          connected: product.seller.mercadoPagoConnected,
+          products: [product.name],
+        });
+      }
+    }
+
+    for (const [, seller] of sellerMap) {
+      if (!seller.connected) {
+        disconnectedSellers.push({ sellerName: seller.name, productNames: seller.products });
+      }
+    }
+
+    return {
+      valid: disconnectedSellers.length === 0,
+      disconnectedSellers,
+    };
+  }
+
   async createCheckout(userId: string, data: CreateCheckoutData) {
     const { orderId, payerEmail } = data;
 

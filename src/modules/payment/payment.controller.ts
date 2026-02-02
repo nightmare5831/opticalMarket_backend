@@ -7,7 +7,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
-import { IsString, IsEmail } from 'class-validator';
+import { IsString, IsEmail, IsArray } from 'class-validator';
 import { PaymentService } from './payment.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
@@ -19,6 +19,12 @@ class CreateCheckoutDto {
   payerEmail: string;
 }
 
+class ValidateSellersDto {
+  @IsArray()
+  @IsString({ each: true })
+  productIds: string[];
+}
+
 @Controller('payment')
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
@@ -27,6 +33,12 @@ export class PaymentController {
   @UseGuards(JwtAuthGuard)
   async createCheckout(@Request() req: any, @Body() data: CreateCheckoutDto) {
     return this.paymentService.createCheckout(req.user.sub, data);
+  }
+
+  @Post('validate-sellers')
+  @UseGuards(JwtAuthGuard)
+  async validateSellers(@Body() data: ValidateSellersDto) {
+    return this.paymentService.validateSellersMpConnection(data.productIds);
   }
 
   @Post('webhook')
