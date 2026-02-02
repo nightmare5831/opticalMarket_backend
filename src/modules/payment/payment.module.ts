@@ -5,11 +5,13 @@ import { PaymentController } from './payment.controller';
 import { PaymentService } from './payment.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { OrdersModule } from '../orders/orders.module';
+import { SellerSettingsModule } from '../seller-settings/seller-settings.module';
 
 @Module({
   imports: [
     PrismaModule,
     OrdersModule,
+    SellerSettingsModule,
     ConfigModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

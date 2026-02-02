@@ -13,6 +13,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { ShippingModule } from './modules/shipping/shipping.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { SellerSettingsModule } from './modules/seller-settings/seller-settings.module';
 import { HealthModule } from './modules/health/health.module';
 import { AppController } from './app.controller';
 
@@ -44,6 +45,7 @@ import { AppController } from './app.controller';
     PaymentModule,
     ShippingModule,
     AdminModule,
+    SellerSettingsModule,
     HealthModule,
   ],
   controllers: [AppController],

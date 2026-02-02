@@ -18,8 +18,10 @@ model User {
   sellerType            SellerType? 
   cnpj                  String?     
   legalCompanyName      String?     
-  mercadoPagoConnected  Boolean     @default(false) 
-  mercadoPagoAccountId  String?     
+  mercadoPagoConnected     Boolean     @default(false)
+  mercadoPagoAccountId     String?
+  mercadoPagoAccessToken   String?     @db.Text
+  mercadoPagoRefreshToken  String?     @db.Text
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
   orders                Order[]
@@ -83,20 +85,22 @@ model Address {
 }
 
 model Order {
-  id             String        @id @default(uuid())
-  userId         String
-  addressId      String?
-  status         OrderStatus   @default(PENDING)
-  paymentMethod  PaymentMethod?
-  paymentId      String?
-  paymentStatus  PaymentStatus @default(PENDING)
-  shippingMethod String?
-  total          Decimal       @db.Decimal(10, 2)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  user           User          @relation(fields: [userId], references: [id])
-  address        Address?      @relation(fields: [addressId], references: [id])
-  items          OrderItem[]
+  id              String        @id @default(uuid())
+  userId          String
+  sellerId        String?
+  addressId       String?
+  status          OrderStatus   @default(PENDING)
+  paymentMethod   PaymentMethod?
+  paymentId       String?
+  paymentStatus   PaymentStatus @default(PENDING)
+  applicationFee  Decimal       @db.Decimal(10, 2) @default(0)
+  shippingMethod  String?
+  total           Decimal       @db.Decimal(10, 2)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  user            User          @relation(fields: [userId], references: [id])
+  address         Address?      @relation(fields: [addressId], references: [id])
+  items           OrderItem[]
 }
 
 model OrderItem {
