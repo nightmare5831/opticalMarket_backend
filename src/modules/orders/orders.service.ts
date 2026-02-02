@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { PaymentMethod, PaymentStatus, OrderStatus } from '@prisma/client';
+import { PaymentMethod, PaymentStatus, OrderStatus, ShippingType } from '@prisma/client';
 import { BlingService } from '../bling/bling.service';
 
 interface CartItem {
@@ -16,8 +16,9 @@ interface CreateOrderData {
   addressId: string;
   items: CartItem[];
   paymentMethod: PaymentMethod;
-  shippingMethod: string;
-  shippingCost: number;
+  shippingType: ShippingType;
+  shippingMethod?: string;
+  shippingCost?: number;
 }
 
 @Injectable()
@@ -99,9 +100,10 @@ export class OrdersService {
       });
     }
 
-    // Split shipping evenly across seller orders
+    // Split shipping evenly across seller orders (0 for seller shipping)
     const sellerCount = sellerGroups.size;
-    const shippingPerSeller = data.shippingCost / sellerCount;
+    const shippingCost = data.shippingType === ShippingType.SELLER ? 0 : (data.shippingCost || 0);
+    const shippingPerSeller = shippingCost / sellerCount;
 
     // Create one order per seller in a transaction
     const orders = await this.prisma.$transaction(async (tx) => {
@@ -117,7 +119,8 @@ export class OrdersService {
             sellerId: sellerId === 'platform' ? null : sellerId,
             addressId,
             paymentMethod,
-            shippingMethod: data.shippingMethod,
+            shippingMethod: data.shippingMethod || null,
+            shippingType: data.shippingType,
             total,
             status: OrderStatus.PENDING,
             paymentStatus: PaymentStatus.PENDING,

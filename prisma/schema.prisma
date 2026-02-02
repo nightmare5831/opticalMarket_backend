@@ -95,6 +95,7 @@ model Order {
   paymentStatus   PaymentStatus @default(PENDING)
   applicationFee  Decimal       @db.Decimal(10, 2) @default(0)
   shippingMethod  String?
+  shippingType    ShippingType  @default(PLATFORM)
   total           Decimal       @db.Decimal(10, 2)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -159,8 +160,13 @@ enum SellerType {
 }
 
 enum ProductType {
-  B2C 
-  B2B 
+  B2C
+  B2B
+}
+
+enum ShippingType {
+  PLATFORM
+  SELLER
 }
 
 model BlingToken {

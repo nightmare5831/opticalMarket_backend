@@ -12,6 +12,7 @@ import {
   IsString,
   IsArray,
   IsEnum,
+  IsOptional,
   ValidateNested,
   IsNumber,
   Min,
@@ -21,7 +22,7 @@ import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles, UserRole } from '../../common/decorators/roles.decorator';
-import { PaymentMethod, OrderStatus } from '@prisma/client';
+import { PaymentMethod, OrderStatus, ShippingType } from '@prisma/client';
 
 class CartItemDto {
   @IsString()
@@ -44,12 +45,17 @@ class CreateOrderDto {
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;
 
-  @IsString()
-  shippingMethod: string;
+  @IsEnum(ShippingType)
+  shippingType: ShippingType;
 
+  @IsOptional()
+  @IsString()
+  shippingMethod?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  shippingCost: number;
+  shippingCost?: number;
 }
 
 class UpdateOrderStatusDto {
