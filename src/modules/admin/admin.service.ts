@@ -133,6 +133,11 @@ export class AdminService {
       throw new BadRequestException('Cannot change status of admin users');
     }
 
+    // Require MP connection before approving sellers
+    if (user.role === UserRole.SELLER && status === UserStatus.ACTIVE && !user.mercadoPagoConnected) {
+      throw new BadRequestException('Seller must connect Mercado Pago before approval');
+    }
+
     return this.prisma.user.update({
       where: { id },
       data: { status },

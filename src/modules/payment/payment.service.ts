@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
+import { SellerSettingsService } from '../seller-settings/seller-settings.service';
 import { PaymentStatus } from '@prisma/client';
 import axios from 'axios';
 
@@ -10,18 +11,22 @@ interface CreateCheckoutData {
   payerEmail: string;
 }
 
+// Fee rates
+const CREDIT_CARD_FEE = 0.10; // 10%
+const PIX_FEE = 0.08; // 8%
+
 @Injectable()
 export class PaymentService {
-  private accessToken: string;
+  private platformToken: string;
   private baseUrl = 'https://api.mercadopago.com';
 
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
     private ordersService: OrdersService,
+    private sellerSettingsService: SellerSettingsService,
   ) {
-    this.accessToken =
-      this.configService.get<string>('MERCADO_PAGO_ACCESS_TOKEN') || '';
+    this.platformToken = this.configService.get<string>('MERCADO_PAGO_ACCESS_TOKEN') || '';
   }
 
   async createCheckout(userId: string, data: CreateCheckoutData) {
@@ -29,22 +34,29 @@ export class PaymentService {
 
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
-      include: {
-        items: {
-          include: {
-            product: true,
-          },
-        },
-      },
+      include: { items: { include: { product: { include: { seller: true } } } } },
     });
 
-    if (!order) {
-      throw new BadRequestException('Order not found');
+    if (!order) throw new BadRequestException('Order not found');
+    if (order.paymentStatus === PaymentStatus.APPROVED) throw new BadRequestException('Order already paid');
+
+    // Get the seller for this order
+    const sellerId = order.sellerId;
+    let sellerToken: string | null = null;
+
+    if (sellerId) {
+      const seller = await this.prisma.user.findUnique({
+        where: { id: sellerId },
+        select: { mercadoPagoAccessToken: true, mercadoPagoConnected: true },
+      });
+
+      if (seller?.mercadoPagoConnected && seller.mercadoPagoAccessToken) {
+        sellerToken = seller.mercadoPagoAccessToken;
+      }
     }
 
-    if (order.paymentStatus === PaymentStatus.APPROVED) {
-      throw new BadRequestException('Order already paid');
-    }
+    // Use seller's token for destination charge, fallback to platform token
+    const accessToken = sellerToken || this.platformToken;
 
     const frontendUrl = this.configService.get('FRONTEND_URL');
 
@@ -56,14 +68,9 @@ export class PaymentService {
       currency_id: 'BRL',
     }));
 
-    // Calculate shipping cost (total - sum of item prices)
-    const itemsTotal = order.items.reduce(
-      (sum, item) => sum + Number(item.price) * item.quantity,
-      0,
-    );
+    // Add shipping as item if applicable
+    const itemsTotal = order.items.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
     const shippingCost = Number(order.total) - itemsTotal;
-
-    // Add shipping as an item if there's a shipping cost
     if (shippingCost > 0) {
       items.push({
         id: 'shipping',
@@ -74,11 +81,13 @@ export class PaymentService {
       });
     }
 
+    // Calculate application fee (platform commission)
+    const feeRate = order.paymentMethod === 'PIX' ? PIX_FEE : CREDIT_CARD_FEE;
+    const applicationFee = sellerToken ? Math.round(Number(order.total) * feeRate * 100) / 100 : 0;
+
     const preferenceData: any = {
       items,
-      payer: {
-        email: payerEmail,
-      },
+      payer: { email: payerEmail },
       external_reference: order.id,
       notification_url: `${this.configService.get('API_URL')}/api/payment/webhook`,
       statement_descriptor: 'OPTICAL MARKET',
@@ -93,72 +102,94 @@ export class PaymentService {
       },
     };
 
-    // Only add back_urls if frontend URL is properly configured (not localhost for sandbox)
+    // Add application fee for marketplace split (only when using seller token)
+    if (sellerToken && applicationFee > 0) {
+      preferenceData.marketplace_fee = applicationFee;
+    }
+
     if (frontendUrl && !frontendUrl.includes('localhost')) {
       preferenceData.back_urls = {
-        success: `${frontendUrl}/orders?confirmed`,
-        failure: `${frontendUrl}/orders?confirmed&status=failure`,
-        pending: `${frontendUrl}/orders?confirmed&status=pending`,
+        success: `${frontendUrl}/buyer/orders?confirmed`,
+        failure: `${frontendUrl}/buyer/orders?confirmed&status=failure`,
+        pending: `${frontendUrl}/buyer/orders?confirmed&status=pending`,
       };
       preferenceData.auto_return = 'approved';
     }
 
     try {
-      const response = await axios.post(
-        `${this.baseUrl}/checkout/preferences`,
-        preferenceData,
-        {
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
+      const response = await axios.post(`${this.baseUrl}/checkout/preferences`, preferenceData, {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      });
 
-      const preference = response.data;
+      // Save application fee to order
+      if (applicationFee > 0) {
+        await this.prisma.order.update({
+          where: { id: orderId },
+          data: { applicationFee },
+        });
+      }
 
       return {
-        preferenceId: preference.id,
-        initPoint: preference.init_point, // Production URL
-        sandboxInitPoint: preference.sandbox_init_point, // Sandbox URL for testing
+        preferenceId: response.data.id,
+        initPoint: response.data.init_point,
+        sandboxInitPoint: response.data.sandbox_init_point,
       };
     } catch (error: any) {
-      console.error(
-        'Mercado Pago error:',
-        error.response?.data || error.message,
-      );
-      throw new BadRequestException(
-        error.response?.data?.message || 'Failed to create checkout session',
-      );
+      // If seller token failed, try refreshing it
+      if (sellerToken && sellerId && error.response?.status === 401) {
+        const newToken = await this.sellerSettingsService.refreshSellerToken(sellerId);
+        if (newToken) {
+          const retryResponse = await axios.post(`${this.baseUrl}/checkout/preferences`, preferenceData, {
+            headers: { Authorization: `Bearer ${newToken}`, 'Content-Type': 'application/json' },
+          });
+          return {
+            preferenceId: retryResponse.data.id,
+            initPoint: retryResponse.data.init_point,
+            sandboxInitPoint: retryResponse.data.sandbox_init_point,
+          };
+        }
+      }
+      console.error('Mercado Pago error:', error.response?.data || error.message);
+      throw new BadRequestException(error.response?.data?.message || 'Failed to create checkout session');
     }
   }
 
   async handleWebhook(data: any) {
-    if (data.type !== 'payment') {
-      return { received: true };
-    }
+    if (data.type !== 'payment') return { received: true };
 
     const paymentId = data.data?.id;
-    if (!paymentId) {
-      return { received: true };
-    }
+    if (!paymentId) return { received: true };
 
     try {
-      const response = await axios.get(
-        `${this.baseUrl}/v1/payments/${paymentId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-          },
-        },
-      );
+      // Try platform token first to get payment info
+      const response = await axios.get(`${this.baseUrl}/v1/payments/${paymentId}`, {
+        headers: { Authorization: `Bearer ${this.platformToken}` },
+      }).catch(() => null);
 
-      const payment = response.data;
-      const orderId = payment.external_reference;
+      // If platform token fails, find the order and use seller token
+      let payment = response?.data;
+      if (!payment) {
+        const order = await this.prisma.order.findFirst({
+          where: { paymentId: String(paymentId) },
+          select: { sellerId: true },
+        });
+        if (order?.sellerId) {
+          const seller = await this.prisma.user.findUnique({
+            where: { id: order.sellerId },
+            select: { mercadoPagoAccessToken: true },
+          });
+          if (seller?.mercadoPagoAccessToken) {
+            const sellerResponse = await axios.get(`${this.baseUrl}/v1/payments/${paymentId}`, {
+              headers: { Authorization: `Bearer ${seller.mercadoPagoAccessToken}` },
+            });
+            payment = sellerResponse.data;
+          }
+        }
+      }
 
-      if (orderId) {
+      if (payment?.external_reference) {
         await this.ordersService.updatePaymentStatus(
-          orderId,
+          payment.external_reference,
           String(payment.id),
           this.mapPaymentStatus(payment.status),
         );
@@ -174,46 +205,32 @@ export class PaymentService {
   async getPaymentStatus(orderId: string, userId: string) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
-      select: {
-        id: true,
-        paymentId: true,
-        paymentStatus: true,
-        paymentMethod: true,
-        status: true,
-      },
+      select: { id: true, paymentId: true, paymentStatus: true, paymentMethod: true, status: true, sellerId: true },
     });
 
-    if (!order) {
-      throw new BadRequestException('Order not found');
-    }
-
+    if (!order) throw new BadRequestException('Order not found');
     if (!order.paymentId) {
-      return {
-        orderId: order.id,
-        paymentStatus: order.paymentStatus,
-        orderStatus: order.status,
-      };
+      return { orderId: order.id, paymentStatus: order.paymentStatus, orderStatus: order.status };
     }
 
     try {
-      const response = await axios.get(
-        `${this.baseUrl}/v1/payments/${order.paymentId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-          },
-        },
-      );
+      // Use seller token if available, fallback to platform
+      let accessToken = this.platformToken;
+      if (order.sellerId) {
+        const seller = await this.prisma.user.findUnique({
+          where: { id: order.sellerId },
+          select: { mercadoPagoAccessToken: true },
+        });
+        if (seller?.mercadoPagoAccessToken) accessToken = seller.mercadoPagoAccessToken;
+      }
 
-      const payment = response.data;
+      const response = await axios.get(`${this.baseUrl}/v1/payments/${order.paymentId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
 
-      const currentStatus = this.mapPaymentStatus(payment.status);
+      const currentStatus = this.mapPaymentStatus(response.data.status);
       if (currentStatus !== order.paymentStatus) {
-        await this.ordersService.updatePaymentStatus(
-          orderId,
-          String(payment.id),
-          currentStatus,
-        );
+        await this.ordersService.updatePaymentStatus(orderId, String(response.data.id), currentStatus);
       }
 
       return {
@@ -222,15 +239,10 @@ export class PaymentService {
         paymentStatus: currentStatus,
         orderStatus: order.status,
         paymentMethod: order.paymentMethod,
-        statusDetail: payment.status_detail,
+        statusDetail: response.data.status_detail,
       };
-    } catch (error: any) {
-      console.error('Payment status check error:', error.message);
-      return {
-        orderId: order.id,
-        paymentStatus: order.paymentStatus,
-        orderStatus: order.status,
-      };
+    } catch {
+      return { orderId: order.id, paymentStatus: order.paymentStatus, orderStatus: order.status };
     }
   }
 

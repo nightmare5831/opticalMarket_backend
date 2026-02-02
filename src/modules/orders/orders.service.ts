@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PaymentMethod, PaymentStatus, OrderStatus } from '@prisma/client';
@@ -35,7 +34,7 @@ export class OrdersService {
         items: {
           include: {
             product: {
-              select: { id: true, name: true, images: true, sku: true },
+              select: { id: true, name: true, images: true, sku: true, seller: { select: { name: true } } },
             },
           },
         },
@@ -60,142 +59,120 @@ export class OrdersService {
       },
     });
 
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
+    if (!order) throw new NotFoundException('Order not found');
     return order;
   }
 
   async create(userId: string, data: CreateOrderData) {
     const { addressId, items, paymentMethod } = data;
 
-    if (!items || items.length === 0) {
-      throw new BadRequestException('Cart is empty');
-    }
+    if (!items || items.length === 0) throw new BadRequestException('Cart is empty');
 
-    const address = await this.prisma.address.findFirst({
-      where: { id: addressId, userId },
-    });
-
-    if (!address) {
-      throw new NotFoundException('Address not found');
-    }
+    const address = await this.prisma.address.findFirst({ where: { id: addressId, userId } });
+    if (!address) throw new NotFoundException('Address not found');
 
     const productIds = items.map((item) => item.productId);
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
     });
 
-    if (products.length !== items.length) {
-      throw new BadRequestException('One or more products not found');
-    }
+    if (products.length !== items.length) throw new BadRequestException('One or more products not found');
 
+    // Validate stock
     for (const item of items) {
       const product = products.find((p) => p.id === item.productId);
       if (product && product.stock < item.quantity) {
-        throw new BadRequestException(
-          `Insufficient stock for product: ${product.name}`,
-        );
+        throw new BadRequestException(`Insufficient stock for product: ${product.name}`);
       }
     }
 
-    let total = 0;
-    const orderItems = items.map((item) => {
+    // Group items by seller
+    const sellerGroups = new Map<string, { productId: string; quantity: number; price: number }[]>();
+    for (const item of items) {
       const product = products.find((p) => p.id === item.productId)!;
-      const itemTotal = Number(product.price) * item.quantity;
-      total += itemTotal;
-      return {
+      const sellerId = product.sellerId || 'platform';
+      if (!sellerGroups.has(sellerId)) sellerGroups.set(sellerId, []);
+      sellerGroups.get(sellerId)!.push({
         productId: item.productId,
         quantity: item.quantity,
-        price: product.price,
-      };
-    });
-
-    // Add shipping cost to total
-    total += data.shippingCost;
-
-    const order = await this.prisma.$transaction(async (tx) => {
-      const newOrder = await tx.order.create({
-        data: {
-          userId,
-          addressId,
-          paymentMethod,
-          shippingMethod: data.shippingMethod,
-          total,
-          status: OrderStatus.PENDING,
-          paymentStatus: PaymentStatus.PENDING,
-          items: {
-            create: orderItems,
-          },
-        },
-        include: {
-          items: {
-            include: {
-              product: {
-                select: { id: true, name: true, images: true, sku: true },
-              },
-            },
-          },
-          address: true,
-        },
+        price: Number(product.price),
       });
-
-      for (const item of items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stock: {
-              decrement: item.quantity,
-            },
-          },
-        });
-      }
-
-      return newOrder;
-    });
-
-    return order;
-  }
-
-  async updatePaymentStatus(
-    orderId: string,
-    paymentId: string,
-    status: PaymentStatus,
-  ) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-    });
-
-    if (!order) {
-      throw new NotFoundException('Order not found');
     }
 
-    const updateData: any = {
-      paymentId,
-      paymentStatus: status,
-    };
+    // Split shipping evenly across seller orders
+    const sellerCount = sellerGroups.size;
+    const shippingPerSeller = data.shippingCost / sellerCount;
+
+    // Create one order per seller in a transaction
+    const orders = await this.prisma.$transaction(async (tx) => {
+      const createdOrders: any[] = [];
+
+      for (const [sellerId, sellerItems] of sellerGroups) {
+        const itemsTotal = sellerItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+        const total = itemsTotal + shippingPerSeller;
+
+        const order = await tx.order.create({
+          data: {
+            userId,
+            sellerId: sellerId === 'platform' ? null : sellerId,
+            addressId,
+            paymentMethod,
+            shippingMethod: data.shippingMethod,
+            total,
+            status: OrderStatus.PENDING,
+            paymentStatus: PaymentStatus.PENDING,
+            items: {
+              create: sellerItems.map((i) => ({
+                productId: i.productId,
+                quantity: i.quantity,
+                price: i.price,
+              })),
+            },
+          },
+          include: {
+            items: {
+              include: {
+                product: { select: { id: true, name: true, images: true, sku: true } },
+              },
+            },
+            address: true,
+          },
+        });
+
+        // Decrement stock
+        for (const item of sellerItems) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { decrement: item.quantity } },
+          });
+        }
+
+        createdOrders.push(order);
+      }
+
+      return createdOrders;
+    });
+
+    // Return array if multi-seller, single order if single seller
+    return orders.length === 1 ? orders[0] : orders;
+  }
+
+  async updatePaymentStatus(orderId: string, paymentId: string, status: PaymentStatus) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+
+    const updateData: any = { paymentId, paymentStatus: status };
 
     if (status === PaymentStatus.APPROVED) {
       updateData.status = OrderStatus.PAID;
-    } else if (
-      status === PaymentStatus.REJECTED ||
-      status === PaymentStatus.CANCELLED
-    ) {
+    } else if (status === PaymentStatus.REJECTED || status === PaymentStatus.CANCELLED) {
       updateData.status = OrderStatus.CANCELLED;
 
-      const orderItems = await this.prisma.orderItem.findMany({
-        where: { orderId },
-      });
-
+      const orderItems = await this.prisma.orderItem.findMany({ where: { orderId } });
       for (const item of orderItems) {
         await this.prisma.product.update({
           where: { id: item.productId },
-          data: {
-            stock: {
-              increment: item.quantity,
-            },
-          },
+          data: { stock: { increment: item.quantity } },
         });
       }
     }
@@ -204,78 +181,34 @@ export class OrdersService {
       where: { id: orderId },
       data: updateData,
       include: {
-        items: {
-          include: {
-            product: {
-              select: { id: true, name: true, images: true, sku: true },
-            },
-          },
-        },
+        items: { include: { product: { select: { id: true, name: true, images: true, sku: true } } } },
         address: true,
       },
-    });
-  }
-
-  async findByPaymentId(paymentId: string) {
-    return this.prisma.order.findFirst({
-      where: { paymentId },
     });
   }
 
   async findSellerOrders(sellerId: string) {
     return this.prisma.order.findMany({
-      where: {
-        items: {
-          some: {
-            product: {
-              sellerId: sellerId,
-            },
-          },
-        },
-      },
+      where: { sellerId },
       include: {
         items: {
-          where: {
-            product: {
-              sellerId: sellerId,
-            },
-          },
           include: {
-            product: {
-              select: { id: true, name: true, images: true, sku: true },
-            },
+            product: { select: { id: true, name: true, images: true, sku: true } },
           },
         },
         address: true,
-        user: {
-          select: { id: true, name: true, email: true },
-        },
+        user: { select: { id: true, name: true, email: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async updateOrderStatus(
-    orderId: string,
-    sellerId: string,
-    newStatus: OrderStatus,
-  ) {
+  async updateOrderStatus(orderId: string, sellerId: string, newStatus: OrderStatus) {
     const order = await this.prisma.order.findFirst({
-      where: {
-        id: orderId,
-        items: {
-          some: {
-            product: {
-              sellerId: sellerId,
-            },
-          },
-        },
-      },
+      where: { id: orderId, sellerId },
     });
 
-    if (!order) {
-      throw new NotFoundException('Order not found or not authorized');
-    }
+    if (!order) throw new NotFoundException('Order not found or not authorized');
 
     const validTransitions: Record<OrderStatus, OrderStatus[]> = {
       [OrderStatus.PENDING]: [OrderStatus.CANCELLED],
@@ -286,22 +219,14 @@ export class OrdersService {
     };
 
     if (!validTransitions[order.status].includes(newStatus)) {
-      throw new BadRequestException(
-        `Cannot transition from ${order.status} to ${newStatus}`,
-      );
+      throw new BadRequestException(`Cannot transition from ${order.status} to ${newStatus}`);
     }
 
     return this.prisma.order.update({
       where: { id: orderId },
       data: { status: newStatus },
       include: {
-        items: {
-          include: {
-            product: {
-              select: { id: true, name: true, images: true, sku: true },
-            },
-          },
-        },
+        items: { include: { product: { select: { id: true, name: true, images: true, sku: true } } } },
         address: true,
       },
     });
@@ -309,66 +234,32 @@ export class OrdersService {
 
   async createBlingOrder(orderId: string, sellerId: string) {
     const order = await this.prisma.order.findFirst({
-      where: {
-        id: orderId,
-        items: {
-          some: {
-            product: {
-              sellerId: sellerId,
-            },
-          },
-        },
-      },
+      where: { id: orderId, sellerId },
       include: {
-        items: {
-          include: {
-            product: true,
-          },
-        },
+        items: { include: { product: true } },
         address: true,
-        user: {
-          select: { name: true, email: true },
-        },
+        user: { select: { name: true, email: true } },
       },
     });
 
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
+    if (!order) throw new NotFoundException('Order not found');
+    if (!order.address) throw new BadRequestException('Order has no shipping address');
+    if (!order.user.name) throw new BadRequestException('Customer name is required for Bling sync');
+    if (!order.user.email) throw new BadRequestException('Customer email is required for Bling sync');
 
-    if (!order.address) {
-      throw new BadRequestException('Order has no shipping address');
-    }
-
-    // Validate required fields before sending to Bling
-    if (!order.user.name) {
-      throw new BadRequestException('Customer name is required for Bling sync');
-    }
-    if (!order.user.email) {
-      throw new BadRequestException('Customer email is required for Bling sync');
-    }
-
-    // Validate all items have SKUs
     const itemsWithoutSku = order.items.filter(item => !item.product.sku);
     if (itemsWithoutSku.length > 0) {
-      const productNames = itemsWithoutSku.map(i => i.product.name).join(', ');
-      throw new BadRequestException(`Products missing SKU: ${productNames}`);
+      throw new BadRequestException(`Products missing SKU: ${itemsWithoutSku.map(i => i.product.name).join(', ')}`);
     }
 
-    // Validate address fields
     if (!order.address.street || !order.address.number || !order.address.neighborhood ||
         !order.address.city || !order.address.state || !order.address.zipCode) {
-      throw new BadRequestException('Address is incomplete. All fields (street, number, neighborhood, city, state, zipCode) are required.');
+      throw new BadRequestException('Address is incomplete');
     }
 
-    const orderNumber = order.id.slice(0, 8).toUpperCase();
-
-    const result = await this.blingService.createOrderInBling(sellerId, {
-      orderNumber,
-      customer: {
-        name: order.user.name,
-        email: order.user.email,
-      },
+    return this.blingService.createOrderInBling(sellerId, {
+      orderNumber: order.id.slice(0, 8).toUpperCase(),
+      customer: { name: order.user.name, email: order.user.email },
       address: {
         street: order.address.street,
         number: order.address.number,
@@ -388,7 +279,5 @@ export class OrdersService {
       total: Number(order.total),
       paymentMethod: order.paymentMethod || 'N/A',
     });
-
-    return result;
   }
 }
